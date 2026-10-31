@@ -70,8 +70,18 @@
   const BUCKET = 'recipes';
   async function uploadPhoto(blob) {
     const path = `${new Date().toISOString().slice(0, 7)}/${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}.jpg`;
-    const { error } = await sb.storage.from(BUCKET).upload(path, blob, { contentType: 'image/jpeg', upsert: false, cacheControl: '31536000' });
-    if (error) throw new Error(/bucket not found|not found/i.test(error.message) ? '사진 저장 공간이 아직 준비되지 않았어요' : niceErr(error));
+    // 세션이 만료됐으면 먼저 새로 받는다 (만료된 채 올리면 403 으로 실패)
+    try { await sb.auth.getSession(); } catch (e) {}
+    const up = sb.storage.from(BUCKET).upload(path, blob, { contentType: 'image/jpeg', upsert: false, cacheControl: '31536000' });
+    const timeout = new Promise((_, rej) => setTimeout(() => rej(new Error('사진 올리기가 너무 오래 걸려요. 인터넷 연결을 확인하고 다시 해 주세요')), 60000));
+    const { error } = await Promise.race([up, timeout]);
+    if (error) {
+      const m = error.message || '';
+      if (/bucket not found/i.test(m)) throw new Error('사진 저장 공간이 아직 준비되지 않았어요');
+      if (/row-level security|unauthorized|jwt|403/i.test(m)) throw new Error('로그인이 만료됐어요. 다시 로그인한 뒤 올려 주세요');
+      if (/payload too large|exceeded|413/i.test(m)) throw new Error('사진이 너무 커요');
+      throw new Error(niceErr(error));
+    }
     return path;
   }
   const photoUrl = path => sb.storage.from(BUCKET).getPublicUrl(path).data.publicUrl;

@@ -85,37 +85,90 @@
     const r = recipeOf(m.name); if (!r) return '';
     return `<span class="rcp" data-recipe="${esc(m.name)}" role="button" tabindex="0" title="레시피 사진 ${r.photos.length}장 보기">${CAM}${r.photos.length > 1 ? `<small>${r.photos.length}</small>` : ''}</span>`;
   }
+  // 사진 열기: createImageBitmap 이 안 되는 브라우저(구형 사파리 등)는 <img> 로
+  async function decodeImage(file) {
+    if (window.createImageBitmap) {
+      try { return await createImageBitmap(file, { imageOrientation: 'from-image' }); } catch (e) {}
+      try { return await createImageBitmap(file); } catch (e) {}
+    }
+    const url = URL.createObjectURL(file);
+    try {
+      const img = new Image(); img.decoding = 'async'; img.src = url;
+      await new Promise((res, rej) => { img.onload = res; img.onerror = () => rej(new Error('이 사진 형식은 열 수 없어요 (HEIC면 JPG로 바꿔 올려 주세요)')); });
+      return img;
+    } finally { setTimeout(() => URL.revokeObjectURL(url), 1000); }
+  }
   async function shrink(file) {
-    let bmp;
-    try { bmp = await createImageBitmap(file, { imageOrientation: 'from-image' }); }
-    catch (e) { throw new Error('이 사진 형식은 열 수 없어요 (HEIC면 JPG로 바꿔 올려 주세요)'); }
-    const MAX = 1600, k = Math.min(1, MAX / Math.max(bmp.width, bmp.height));
-    const w = Math.round(bmp.width * k), h = Math.round(bmp.height * k);
+    const bmp = await decodeImage(file);
+    const W = bmp.width || bmp.naturalWidth, H = bmp.height || bmp.naturalHeight;
+    const MAX = 1600, k = Math.min(1, MAX / Math.max(W, H));
+    const w = Math.round(W * k), h = Math.round(H * k);
     const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
     cv.getContext('2d').drawImage(bmp, 0, 0, w, h);
+    if (bmp.close) bmp.close();
     const blob = await new Promise(res => cv.toBlob(res, 'image/jpeg', 0.82));
+    if (!blob) throw new Error('사진을 줄이지 못했어요. 다른 사진으로 해 주세요');
     return { blob, w, h };
   }
+  // 같은 사진 찾기: 원본 파일 내용(SHA-256) · 파일명+크기
+  async function fileHash(file) {
+    try { const buf = await file.arrayBuffer(); const d = await crypto.subtle.digest('SHA-256', buf); return [...new Uint8Array(d)].map(x => x.toString(16).padStart(2, '0')).join(''); }
+    catch (e) { return ''; }
+  }
+  function allPhotos() {
+    const out = [];
+    for (const [k, r] of Object.entries(S.recipes || {})) for (const p of (r.photos || [])) out.push({ k, r, p });
+    return out;
+  }
+  function findSamePhoto(hash, fname, fsize) {
+    return allPhotos().find(({ p }) => (hash && p.hash === hash) || (fname && p.fname === fname && p.fsize === fsize));
+  }
+  const recipesUsing = path => allPhotos().filter(x => x.p.path === path).map(x => x.r.name);
+  let UPL = null; // 올리는 중 상태 { name, done, total }
   function pickPhotos(name, done) {
+    if (UPL) return toast('사진을 올리는 중이에요. 끝나면 다시 해 주세요');
+    if (!ME) return toast('로그인해야 사진을 올릴 수 있어요');
     const inp = document.createElement('input');
     inp.type = 'file'; inp.accept = 'image/*'; inp.multiple = true;
+    inp.style.cssText = 'position:fixed;left:-9999px;top:0;opacity:0';
+    document.body.appendChild(inp); // iOS 사파리는 문서에 붙어 있어야 change 가 확실히 온다
+    const cleanup = () => setTimeout(() => inp.remove(), 0);
+    inp.addEventListener('cancel', cleanup);
     inp.onchange = async () => {
-      const files = [...inp.files]; if (!files.length) return;
-      if (!ME) return toast('로그인해야 사진을 올릴 수 있어요');
-      toast(`사진 ${files.length}장 올리는 중…`);
-      const added = [];
-      for (const f of files) {
-        try { const { blob, w, h } = await shrink(f); const path = await Y.uploadPhoto(blob); added.push({ path, w, h, at: D.now() }); }
-        catch (e) { toast(e.message); }
-      }
-      if (!added.length) return;
+      const files = [...inp.files]; cleanup();
+      if (!files.length) return;
+      const k = rKey(name);
       S.recipes = S.recipes || {};
-      const k = rKey(name), cur = S.recipes[k] || { name, photos: [] };
-      S.recipes[k] = { name: cur.name || name, photos: [...(cur.photos || []), ...added], updatedAt: D.now() };
-      commit();
+      UPL = { name, done: 0, total: files.length }; done && done();
+      let added = 0, reused = 0, dup = 0, failed = 0;
+      for (const f of files) {
+        try {
+          const hash = await fileHash(f);
+          const cur = S.recipes[k] || { name, photos: [] };
+          if ((cur.photos || []).some(p => (hash && p.hash === hash) || (p.fname === f.name && p.fsize === f.size))) { dup++; continue; }
+          const same = findSamePhoto(hash, f.name, f.size);
+          let ph;
+          if (same) { ph = { ...same.p, at: D.now() }; reused++; }
+          else {
+            const { blob, w, h } = await shrink(f);
+            const path = await Y.uploadPhoto(blob);
+            ph = { path, w, h, at: D.now(), hash, fname: f.name, fsize: f.size };
+            added++;
+          }
+          const c2 = S.recipes[k] || { name, photos: [] };
+          S.recipes[k] = { name: c2.name || name, photos: [...(c2.photos || []), ph], updatedAt: D.now() };
+          commit();
+        } catch (e) { failed++; toast(e.message); }
+        finally { UPL.done++; done && done(); }
+      }
+      UPL = null; done && done();
       const n = D.alive(S.menus).filter(x => rKey(x.name) === k).length;
-      toast(`레시피 사진 ${added.length}장 등록 · 같은 요리 ${n}곳에 함께 보여요`);
-      done && done();
+      const parts = [];
+      if (added) parts.push(`새 사진 ${added}장`);
+      if (reused) parts.push(`이미 올린 사진 ${reused}장 연결`);
+      if (dup) parts.push(`이미 있는 사진 ${dup}장 건너뜀`);
+      if (failed) parts.push(`${failed}장 실패`);
+      if (parts.length) setTimeout(() => toast(parts.join(' · ') + (added || reused ? ` · 같은 요리 ${n}곳에 보여요` : '')), failed ? 2500 : 0);
     };
     inp.click();
   }
@@ -123,31 +176,33 @@
     const r = recipeOf(name);
     const thumbs = r ? r.photos.map((p, i) => `<button type="button" class="rth" data-rview="${i}" aria-label="레시피 사진 ${i + 1} 크게 보기"><img src="${esc(Y.photoUrl(p.path))}" alt="" loading="lazy"></button>`).join('') : '';
     return `<div class="rsec"><div class="lnh"><span>레시피 사진${r ? ` ${r.photos.length}장` : ''}</span><span>같은 이름 요리 모두에 함께 보여요</span></div>
-      <div class="rstrip">${thumbs}<button type="button" class="radd" data-radd>${CAM}<span>${r ? '추가' : '사진 등록'}</span></button></div></div>`;
+      <div class="rstrip">${thumbs}${UPL && UPL.name === name ? `<div class="rup"><i class="spin"></i><span>${UPL.done}/${UPL.total} 올리는 중</span></div>` : `<button type="button" class="radd" data-radd>${CAM}<span>${r ? '추가' : '사진 등록'}</span></button>`}</div></div>`;
   }
   function openRecipe(name, start = 0) {
     const r = recipeOf(name); if (!r) return;
     let i = Math.min(start, r.photos.length - 1);
     const md = openModal(`<div class="rv"><div class="mh"><div><div class="sub">레시피</div><h3>${esc(name)}</h3></div><button class="x" data-close aria-label="닫기">×</button></div>
       <div class="rvimg"><button class="ib rvn" data-step="-1" aria-label="이전 사진">‹</button><a target="_blank" rel="noopener"><img alt="레시피 사진"></a><button class="ib rvn" data-step="1" aria-label="다음 사진">›</button></div>
-      <div class="rvbar"><span class="rvc"></span><span><button class="btn sm" data-radd>사진 추가</button> <button class="btn sm ghost" data-rdel>이 사진 삭제</button></span></div></div>`, 'recipe');
+      <div class="rvbar"><span class="rvc"></span><span><button class="btn sm" data-radd>사진 추가</button> <button class="btn sm ghost" data-rdel>이 요리에서 빼기</button></span></div></div>`, 'recipe');
     const paint = () => {
       const rr = recipeOf(name); if (!rr) return closeModal();
       i = (i + rr.photos.length) % rr.photos.length;
       const url = Y.photoUrl(rr.photos[i].path);
       $('.rvimg img', md).src = url; $('.rvimg a', md).href = url;
-      $('.rvc', md).textContent = `${i + 1} / ${rr.photos.length}`;
+      const others = recipesUsing(rr.photos[i].path).filter(n => rKey(n) !== rKey(name));
+      $('.rvc', md).textContent = `${i + 1} / ${rr.photos.length}` + (others.length ? ` · 같은 사진을 쓰는 요리: ${others.join(', ')}` : '');
       $$('.rvn', md).forEach(b => { b.style.visibility = rr.photos.length > 1 ? '' : 'hidden'; });
     };
     paint();
     md.addEventListener('click', e => {
       if (e.target.closest('[data-close]')) return closeModal();
       const st = e.target.closest('[data-step]'); if (st) { i += +st.dataset.step; return paint(); }
-      if (e.target.closest('[data-radd]')) return pickPhotos(name, paint);
+      if (e.target.closest('[data-radd]')) return pickPhotos(name, () => { if (!UPL) paint(); });
       if (e.target.closest('[data-rdel]')) {
-        if (!confirm('이 레시피 사진을 삭제할까요? 같은 요리 모든 날짜에서 사라져요.')) return;
+        if (!confirm(`이 사진을 '${name}' 레시피에서 뺄까요? 같은 요리 모든 날짜에서 사라져요.`)) return;
         const k = rKey(name), rr = S.recipes[k], [gone] = rr.photos.splice(i, 1);
-        rr.updatedAt = D.now(); commit(); Y.removePhoto(gone.path);
+        rr.updatedAt = D.now(); commit();
+        if (!recipesUsing(gone.path).length) Y.removePhoto(gone.path); // 다른 요리가 같이 쓰면 파일은 남김
         toast('사진을 삭제했어요');
         if (!rr.photos.length) return closeModal();
         paint();
