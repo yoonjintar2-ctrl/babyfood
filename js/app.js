@@ -77,6 +77,86 @@
   // 상태 배지: 재료 필요(파랑) · 요리 필요(검정) · 완성(회색)
   const PILL = { short: '재료 필요', ready: '요리 필요', done: '완성' };
   const pill = st => `<span class="pill p-${st}">${PILL[st]}</span>`;
+  // ---------------- 레시피 사진 ----------------
+  const CAM = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 7h3l2-3h6l2 3h3a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1z"/><circle cx="12" cy="13" r="3.5"/></svg>';
+  const rKey = name => M.norm(name);
+  const recipeOf = name => { const r = (S.recipes || {})[rKey(name)]; return r && r.photos && r.photos.length ? r : null; };
+  function rcpIcon(m) {
+    const r = recipeOf(m.name); if (!r) return '';
+    return `<span class="rcp" data-recipe="${esc(m.name)}" role="button" tabindex="0" title="레시피 사진 ${r.photos.length}장 보기">${CAM}${r.photos.length > 1 ? `<small>${r.photos.length}</small>` : ''}</span>`;
+  }
+  async function shrink(file) {
+    let bmp;
+    try { bmp = await createImageBitmap(file, { imageOrientation: 'from-image' }); }
+    catch (e) { throw new Error('이 사진 형식은 열 수 없어요 (HEIC면 JPG로 바꿔 올려 주세요)'); }
+    const MAX = 1600, k = Math.min(1, MAX / Math.max(bmp.width, bmp.height));
+    const w = Math.round(bmp.width * k), h = Math.round(bmp.height * k);
+    const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+    cv.getContext('2d').drawImage(bmp, 0, 0, w, h);
+    const blob = await new Promise(res => cv.toBlob(res, 'image/jpeg', 0.82));
+    return { blob, w, h };
+  }
+  function pickPhotos(name, done) {
+    const inp = document.createElement('input');
+    inp.type = 'file'; inp.accept = 'image/*'; inp.multiple = true;
+    inp.onchange = async () => {
+      const files = [...inp.files]; if (!files.length) return;
+      if (!ME) return toast('로그인해야 사진을 올릴 수 있어요');
+      toast(`사진 ${files.length}장 올리는 중…`);
+      const added = [];
+      for (const f of files) {
+        try { const { blob, w, h } = await shrink(f); const path = await Y.uploadPhoto(blob); added.push({ path, w, h, at: D.now() }); }
+        catch (e) { toast(e.message); }
+      }
+      if (!added.length) return;
+      S.recipes = S.recipes || {};
+      const k = rKey(name), cur = S.recipes[k] || { name, photos: [] };
+      S.recipes[k] = { name: cur.name || name, photos: [...(cur.photos || []), ...added], updatedAt: D.now() };
+      commit();
+      const n = D.alive(S.menus).filter(x => rKey(x.name) === k).length;
+      toast(`레시피 사진 ${added.length}장 등록 · 같은 요리 ${n}곳에 함께 보여요`);
+      done && done();
+    };
+    inp.click();
+  }
+  function recipeStrip(name) {
+    const r = recipeOf(name);
+    const thumbs = r ? r.photos.map((p, i) => `<button type="button" class="rth" data-rview="${i}" aria-label="레시피 사진 ${i + 1} 크게 보기"><img src="${esc(Y.photoUrl(p.path))}" alt="" loading="lazy"></button>`).join('') : '';
+    return `<div class="rsec"><div class="lnh"><span>레시피 사진${r ? ` ${r.photos.length}장` : ''}</span><span>같은 이름 요리 모두에 함께 보여요</span></div>
+      <div class="rstrip">${thumbs}<button type="button" class="radd" data-radd>${CAM}<span>${r ? '추가' : '사진 등록'}</span></button></div></div>`;
+  }
+  function openRecipe(name, start = 0) {
+    const r = recipeOf(name); if (!r) return;
+    let i = Math.min(start, r.photos.length - 1);
+    const md = openModal(`<div class="rv"><div class="mh"><div><div class="sub">레시피</div><h3>${esc(name)}</h3></div><button class="x" data-close aria-label="닫기">×</button></div>
+      <div class="rvimg"><button class="ib rvn" data-step="-1" aria-label="이전 사진">‹</button><a target="_blank" rel="noopener"><img alt="레시피 사진"></a><button class="ib rvn" data-step="1" aria-label="다음 사진">›</button></div>
+      <div class="rvbar"><span class="rvc"></span><span><button class="btn sm" data-radd>사진 추가</button> <button class="btn sm ghost" data-rdel>이 사진 삭제</button></span></div></div>`, 'recipe');
+    const paint = () => {
+      const rr = recipeOf(name); if (!rr) return closeModal();
+      i = (i + rr.photos.length) % rr.photos.length;
+      const url = Y.photoUrl(rr.photos[i].path);
+      $('.rvimg img', md).src = url; $('.rvimg a', md).href = url;
+      $('.rvc', md).textContent = `${i + 1} / ${rr.photos.length}`;
+      $$('.rvn', md).forEach(b => { b.style.visibility = rr.photos.length > 1 ? '' : 'hidden'; });
+    };
+    paint();
+    md.addEventListener('click', e => {
+      if (e.target.closest('[data-close]')) return closeModal();
+      const st = e.target.closest('[data-step]'); if (st) { i += +st.dataset.step; return paint(); }
+      if (e.target.closest('[data-radd]')) return pickPhotos(name, paint);
+      if (e.target.closest('[data-rdel]')) {
+        if (!confirm('이 레시피 사진을 삭제할까요? 같은 요리 모든 날짜에서 사라져요.')) return;
+        const k = rKey(name), rr = S.recipes[k], [gone] = rr.photos.splice(i, 1);
+        rr.updatedAt = D.now(); commit(); Y.removePhoto(gone.path);
+        toast('사진을 삭제했어요');
+        if (!rr.photos.length) return closeModal();
+        paint();
+      }
+    });
+    md.addEventListener('keydown', e => { if (e.key === 'ArrowLeft') { i--; paint(); } if (e.key === 'ArrowRight') { i++; paint(); } });
+    md.tabIndex = -1; md.focus();
+  }
+
   function shortLine(m) {
     const r = EV.get(m.id);
     if (!r || r.state !== 'short') return '';
@@ -129,7 +209,7 @@
         cells += `<div class="c${ms.length > 1 ? ' multi' : ''}" data-slot="${d}|${meal}">` + ms.map(m => {
           cnt++; const st = (EV.get(m.id) || {}).state;
           if (st === 'done') done++; else if (st === 'ready') ready++; else short++;
-          return `<button class="mi${st === 'done' ? ' done' : ''}" data-open="${m.id}" draggable="true" data-drag="${m.id}" title="${esc(m.name)} · 끌어서 옮기기 (Alt 누르고 끌면 복사)"><span class="row1">${dotHtml(m)}<span class="n">${esc(m.name)}</span>${pill((EV.get(m.id) || {}).state || 'ready')}</span>${shortLine(m)}</button>`;
+          return `<button class="mi${st === 'done' ? ' done' : ''}" data-open="${m.id}" draggable="true" data-drag="${m.id}" title="${esc(m.name)} · 끌어서 옮기기 (Alt 누르고 끌면 복사)"><span class="row1">${dotHtml(m)}<span class="n">${esc(m.name)}</span>${rcpIcon(m)}${pill((EV.get(m.id) || {}).state || 'ready')}</span>${shortLine(m)}</button>`;
         }).join('') + `<button class="add-sm" data-add="${d}|${meal}" aria-label="${D.md(d)} ${meal} 요리 하나 더 추가">+ 하나 더</button></div>`;
       }
     }
@@ -182,7 +262,7 @@
     for (const meal of D.MEALS) {
       const ms = menusAt(U.selDay, meal);
       body += `<div class="mslot" data-slot="${U.selDay}|${meal}"><div class="ml"><span>${meal}</span>${ms.length ? `<button class="tbtn" data-add="${U.selDay}|${meal}">+ 하나 더</button>` : ''}</div>`;
-      body += ms.map(m => `<button class="card${m.done ? ' done' : ''}" data-open="${m.id}"><span class="row1">${dotHtml(m)}<span class="n">${esc(m.name)}</span>${pill((EV.get(m.id) || {}).state || 'ready')}</span>${shortLine(m)}</button>`).join('');
+      body += ms.map(m => `<button class="card${m.done ? ' done' : ''}" data-open="${m.id}"><span class="row1">${dotHtml(m)}<span class="n">${esc(m.name)}</span>${rcpIcon(m)}${pill((EV.get(m.id) || {}).state || 'ready')}</span>${shortLine(m)}</button>`).join('');
       if (!ms.length) body += `<button class="card add" data-add="${U.selDay}|${meal}">+ 추가</button>`;
       body += '</div>';
     }
@@ -495,6 +575,7 @@
       <div class="stline">${statusHtml(m)}</div>
       ${r.lines.length ? `<div class="lnh"><span>재료 ${r.lines.length}개</span><span>필요 / 냉장고</span></div>${lines}` : '<div class="emptytxt">등록된 재료가 없어요.</div>'}
       ${r.state === 'short' && r.lines.some(l => l.short > 1e-9 && l.have) ? '<div class="note">냉장고에 있어도 앞선 날짜 메뉴에 먼저 배정된 양은 부족으로 계산돼요.</div>' : ''}
+      <div class="rhost">${recipeStrip(m.name)}</div>
       <div class="mf">
         ${m.done ? `<button class="btn" data-act="undo">완성 취소</button>` : `<button class="btn pri" data-act="done">완성으로 표시</button>`}
         <button class="btn" data-act="clone">복제하기</button>
@@ -503,7 +584,10 @@
         <button class="btn" data-act="edit">수정</button>
         <button class="btn ghost" data-act="del">삭제</button>
       </div>`, 'detail');
+    const repaintR = () => { const h = $('.rhost', md); if (h) h.innerHTML = recipeStrip(m.name); };
     md.addEventListener('click', e => {
+      if (e.target.closest('[data-radd]')) return pickPhotos(m.name, repaintR);
+      const rv = e.target.closest('[data-rview]'); if (rv) return openRecipe(m.name, +rv.dataset.rview);
       const a = e.target.closest('[data-act],[data-close]'); if (!a) return;
       if (a.hasAttribute('data-close')) return closeModal();
       const act = a.dataset.act;
@@ -1104,6 +1188,8 @@
   // ---------------- 이벤트 ----------------
   function wire() {
     $('#plan').addEventListener('click', e => {
+      const rc = e.target.closest('[data-recipe]');
+      if (rc && !U.paste) { e.preventDefault(); e.stopPropagation(); return openRecipe(rc.dataset.recipe); }
       if (e.target.closest('[data-fixunit]')) return openUnitFix();
       if (U.paste) {
         const sl = e.target.closest('[data-slot]');

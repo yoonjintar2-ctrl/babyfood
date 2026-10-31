@@ -44,7 +44,7 @@
   // ---------- 상태 ----------
   const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
   const now = () => Date.now();
-  const empty = () => ({ v: 1, fridge: [], menus: [], aliases: {} });
+  const empty = () => ({ v: 1, fridge: [], menus: [], aliases: {}, recipes: {} });
   const alive = a => a.filter(x => !x.deleted);
 
   function mergeById(a = [], b = []) {
@@ -58,7 +58,9 @@
     if (!a) return b; if (!b) return a;
     const al = { ...(a.aliases || {}) };
     for (const [k, v] of Object.entries(b.aliases || {})) if (!al[k] || (v.t || 0) > (al[k].t || 0)) al[k] = v;
-    return { v: 1, fridge: mergeById(a.fridge, b.fridge), menus: mergeById(a.menus, b.menus), aliases: al };
+    const rc = { ...(a.recipes || {}) };
+    for (const [k, v] of Object.entries(b.recipes || {})) if (!rc[k] || (v.updatedAt || 0) > (rc[k].updatedAt || 0)) rc[k] = v;
+    return { v: 1, fridge: mergeById(a.fridge, b.fridge), menus: mergeById(a.menus, b.menus), aliases: al, recipes: rc };
   }
 
   function catalog(S) {

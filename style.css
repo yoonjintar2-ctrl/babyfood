@@ -475,3 +475,22 @@ body.side-open .sidebg{display:block}
 .ufb{margin-top:12px}
 .ufb[hidden]{display:none}
 @media (max-width:760px){ .umb{margin:10px 12px 0;flex-wrap:wrap} }
+
+/* ---------- 레시피 사진 ---------- */
+.rcp{display:inline-flex;align-items:center;gap:1px;flex:none;color:#7c8391;padding:1px 3px;border-radius:5px;cursor:zoom-in}
+.rcp:hover{background:#eef0f3;color:var(--text)}
+.rcp small{font-size:9.5px;font-weight:700}
+.rsec{margin-top:12px}
+.rstrip{display:flex;gap:6px;overflow-x:auto;padding:4px 0 2px}
+.rth{flex:none;width:72px;height:72px;padding:0;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:#f0f1f4;cursor:zoom-in}
+.rth img{width:100%;height:100%;object-fit:cover;display:block}
+.radd{flex:none;width:72px;height:72px;border:1px dashed #c7cbd2;border-radius:8px;background:transparent;color:var(--sub);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;font-size:11.5px}
+.radd:hover{border-color:var(--sub);color:var(--text)}
+.radd svg{width:18px;height:18px}
+.modal.recipe{max-width:min(920px,96vw)}
+.rvimg{position:relative;display:flex;align-items:center;justify-content:center;gap:6px;margin-top:10px;background:#f5f6f8;border-radius:10px;min-height:240px}
+.rvimg img{display:block;max-width:100%;max-height:calc(100vh - 220px);object-fit:contain;border-radius:6px}
+.rvimg a{display:flex;justify-content:center;min-width:0;flex:1}
+.rvn{flex:none;font-size:22px;height:44px;width:36px}
+.rvbar{display:flex;justify-content:space-between;align-items:center;margin-top:10px;font-size:12.5px;color:var(--muted)}
+@media (max-width:760px){ .rvimg img{max-height:calc(100vh - 200px)} }

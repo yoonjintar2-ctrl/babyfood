@@ -66,5 +66,16 @@
       .subscribe();
   }
 
-  root.Sync = { CFG, sb, signUp, signIn, signOut, user, userId, pull, push, subscribe, onAuth: cb => sb.auth.onAuthStateChange((ev, s) => cb(ev, s)) };
+  // 레시피 사진 (Storage 버킷 recipes)
+  const BUCKET = 'recipes';
+  async function uploadPhoto(blob) {
+    const path = `${new Date().toISOString().slice(0, 7)}/${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}.jpg`;
+    const { error } = await sb.storage.from(BUCKET).upload(path, blob, { contentType: 'image/jpeg', upsert: false, cacheControl: '31536000' });
+    if (error) throw new Error(/bucket not found|not found/i.test(error.message) ? '사진 저장 공간이 아직 준비되지 않았어요' : niceErr(error));
+    return path;
+  }
+  const photoUrl = path => sb.storage.from(BUCKET).getPublicUrl(path).data.publicUrl;
+  async function removePhoto(path) { try { await sb.storage.from(BUCKET).remove([path]); } catch (e) {} }
+
+  root.Sync = { CFG, sb, uploadPhoto, photoUrl, removePhoto, signUp, signIn, signOut, user, userId, pull, push, subscribe, onAuth: cb => sb.auth.onAuthStateChange((ev, s) => cb(ev, s)) };
 })(window);
