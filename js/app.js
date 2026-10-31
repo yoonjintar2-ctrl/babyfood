@@ -74,16 +74,18 @@
   const fridgeAlive = () => D.alive(S.fridge).filter(f => f.qty > 1e-9).sort((a, b) => a.name.localeCompare(b.name, 'ko'));
   const findMenu = id => S.menus.find(m => m.id === id);
 
+  // 상태 배지: 재료 필요(파랑) · 요리 필요(검정) · 완성(회색)
+  const PILL = { short: '재료 필요', ready: '요리 필요', done: '완성' };
+  const pill = st => `<span class="pill p-${st}">${PILL[st]}</span>`;
   function statusHtml(m) {
     const r = EV.get(m.id) || { state: 'ready', short: [] };
-    if (r.state === 'done') return '<span class="s-done">완성</span>';
-    if (r.state === 'ready') return '<span class="s-ready">재료 준비 완료</span>';
-    return '<span class="s-short sl">부족 · ' + r.short.map(l => esc(l.name) + ' ' + D.fmtAmt(l.short, l.unit)).join(' · ') + '</span>';
+    if (r.state !== 'short') return `<span class="stl">${pill(r.state)}</span>`;
+    return `<span class="stl">${pill('short')}<span class="s-short sl">${r.short.map(l => esc(l.name) + ' ' + D.fmtAmt(l.short, l.unit)).join(' · ')}</span></span>`;
   }
   // 이름 앞 상태 점: 파랑=부족, 검정=재료 준비 완료, 연회색=완성
   function dotHtml(m) {
     const st = (EV.get(m.id) || {}).state || 'ready';
-    return `<i class="sd sd-${st}" title="${st === 'done' ? '완성' : st === 'ready' ? '재료 준비 완료' : '재료 부족'}"></i>`;
+    return `<i class="sd sd-${st}" title="${PILL[st]}"></i>`;
   }
 
   // ---------------- 화면 ----------------
@@ -122,12 +124,12 @@
         cells += `<div class="c${ms.length > 1 ? ' multi' : ''}" data-slot="${d}|${meal}">` + ms.map(m => {
           cnt++; const st = (EV.get(m.id) || {}).state;
           if (st === 'done') done++; else if (st === 'ready') ready++; else short++;
-          return `<button class="mi${st === 'done' ? ' done' : ''}" data-open="${m.id}" draggable="true" data-drag="${m.id}" title="끌어서 다른 칸으로 옮기기 (Alt 누르고 끌면 복사)"><span class="n">${dotHtml(m)}${esc(m.name)}</span>${statusHtml(m)}</button>`;
+          return `<button class="mi${st === 'done' ? ' done' : ''}" data-open="${m.id}" draggable="true" data-drag="${m.id}" title="${esc(m.name)} · 끌어서 옮기기 (Alt 누르고 끌면 복사)"><span class="n">${dotHtml(m)}${esc(m.name)}</span>${statusHtml(m)}</button>`;
         }).join('') + `<button class="add-sm" data-add="${d}|${meal}" aria-label="${D.md(d)} ${meal} 요리 하나 더 추가">+ 하나 더</button></div>`;
       }
     }
     cells += `<div class="rh nh">영양<small>하루</small></div>` + days.map(d => nutCell(d)).join('');
-    const stats = cnt ? `메뉴 ${cnt}개 · 완성 ${done} · 준비 완료 ${ready} · 부족 ${short}${emptyN ? ' · 빈 칸 ' + emptyN : ''}` : '아직 등록한 식단이 없어요';
+    const stats = cnt ? `메뉴 ${cnt}개 · 재료 필요 ${short} · 요리 필요 ${ready} · 완성 ${done}${emptyN ? ' · 빈 칸 ' + emptyN : ''}` : '아직 등록한 식단이 없어요';
     const copyBtn = second ? `<button class="btn sm" data-copyweek="${mon}">${esc(weekTitle(D.addDays(mon, -7)))} 식단 복사</button>` : '';
     return `<section class="wk">
       <div class="st"><h2>${weekTitle(mon)}</h2><span>${D.md(mon)} – ${D.md(D.addDays(mon, 6))}</span><span class="stats">${stats}</span>${copyBtn}</div>
@@ -185,7 +187,7 @@
       <div class="mday"><div class="mdt"><b>${dd.getMonth() + 1}월 ${dd.getDate()}일 ${D.dow(U.selDay)}요일</b><span>${all.length ? '완성 ' + doneN + ' / ' + all.length : ''}</span></div>
       ${legendHtml()}${body}${nutCard(U.selDay)}</div></div>`;
   }
-  const legendHtml = () => `<div class="legend"><span class="lgt">표시 안내</span><span><i class="sd sd-short"></i>부족</span><span><i class="sd sd-ready"></i>재료 준비 완료</span><span><i class="sd sd-done"></i>완성</span>
+  const legendHtml = () => `<div class="legend"><span class="lgt">표시 안내</span>${pill('short')}${pill('ready')}${pill('done')}
     <label class="tg"><input type="checkbox" data-toggle-short ${U.hideShort ? '' : 'checked'}>부족한 재료 보기</label></div>`;
 
   function renderPlan() {
@@ -218,7 +220,7 @@
     $('#cookList').innerHTML = ck.length ? ck.map(it => `
       <button class="cook" data-open="${it.first.id}">
         <span class="cw${it.diff <= 0 ? ' soon' : ''}">${it.when}</span>
-        <span class="cn"><b><i class="sd sd-${it.shortNames.length ? 'short' : 'ready'}"></i>${esc(it.name)}</b><small>${esc(it.first.meal)}${it.list.length > 1 ? ` 외 ${it.list.length - 1}끼` : ''}${it.shortNames.length ? `<span class="s-short sl"> · 부족 ${esc(it.shortNames.join(', '))}</span>` : ' · 재료 준비 완료'}</small></span>
+        <span class="cn"><b><i class="sd sd-${it.shortNames.length ? 'short' : 'ready'}"></i>${esc(it.name)}</b><small>${esc(it.first.meal)}${it.list.length > 1 ? ` 외 ${it.list.length - 1}끼` : ''}</small><span class="stl">${pill(it.shortNames.length ? 'short' : 'ready')}${it.shortNames.length ? `<span class="s-short sl">${esc(it.shortNames.join(', '))}</span>` : ''}</span></span>
       </button>`).join('') : '<div class="emptytxt">만들 요리가 없어요.</div>';
     const fr = fridgeAlive();
     $('#fcount').textContent = fr.length || '';

@@ -379,3 +379,44 @@ body.hide-short .sl{display:none}
 .usr .arr{color:var(--muted);text-align:center}
 .usr .in{height:36px;text-align:right}
 .usr .nu{color:var(--sub);font-size:13px}
+
+/* ---------- 보기 편한 식단표 (v2) ---------- */
+.layout{max-width:1480px}
+#side{max-width:310px}
+.gr{grid-template-columns:44px repeat(7,minmax(118px,1fr))}
+.rh{padding:9px 6px;justify-content:center}
+.c{padding:3px}
+.mi{padding:5px 6px;gap:3px}
+.mi .n{display:flex;align-items:center;min-width:0;max-width:100%;white-space:nowrap;overflow:hidden;font-size:12.5px;letter-spacing:-.02em}
+.mi .n{text-overflow:ellipsis;display:block}
+.mi .n .sd{vertical-align:1px}
+.c.multi .mi+.mi{border-top:1px solid var(--line2);border-radius:0}
+.add-sm{height:18px;font-size:12px;margin-top:auto;opacity:.7}
+/* 상태 배지 */
+.stl{display:flex;flex-wrap:wrap;align-items:center;gap:3px 5px;line-height:1.35}
+.pill{display:inline-flex;align-items:center;height:16px;padding:0 6px;border-radius:999px;font-size:10px;font-weight:600;letter-spacing:-.01em;white-space:nowrap;flex:none}
+.p-short{background:#e6edfc;color:#1d4ed8}
+.p-ready{background:#e7e9ed;color:#16181d}
+.p-done{background:#f1f2f4;color:#8b919e}
+.stl .s-short{font-size:10.5px;color:var(--blue)}
+.legend .pill{margin-right:2px}
+.card .stl{margin-top:2px}
+.card .n{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.card.done{flex-direction:column;align-items:flex-start}
+.cook .cn .stl{margin-top:3px}
+
+/* 상태 색: 재료 필요=노랑 · 요리 필요=주황 · 완성=녹색 */
+.sd-short{background:#eab308}
+.sd-ready{background:#f97316}
+.sd-done{background:#22c55e}
+.p-short{background:#fef3c7;color:#854d0e}
+.p-ready{background:#ffedd5;color:#c2410c}
+.p-done{background:#dcfce7;color:#15803d}
+.stl .s-short,.cook .s-short{color:#a16207}
+.ln.short,.ln.short>span:last-child{color:#a16207}
+.has.short{color:#a16207}
+.day .dot{background:#eab308}
+.mi.done .n{color:var(--muted)}
+.gr>*{min-width:0}
+.mi{min-width:0;max-width:100%}
+.stl .s-short{min-width:0;overflow-wrap:anywhere}
