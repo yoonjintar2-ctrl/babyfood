@@ -178,10 +178,10 @@
       <div class="mday"><div class="mdt"><b>${dd.getMonth() + 1}월 ${dd.getDate()}일 ${D.dow(U.selDay)}요일</b><span>${all.length ? '완성 ' + doneN + ' / ' + all.length : ''}</span></div>
       ${legendHtml()}${body}${nutCard(U.selDay)}</div></div>`;
   }
-  const legendHtml = () => '<div class="legend"><span class="s-short">부족</span><span class="s-ready"><i></i>재료 준비 완료</span><span class="s-done">✓ 완성</span></div>';
+  const legendHtml = () => '<div class="legend"><span class="lgt">표시 안내</span><span class="s-short">부족 · 재료명</span><span class="s-ready"><i></i>재료 준비 완료</span><span class="s-done">✓ 완성</span></div>';
 
   function renderPlan() {
-    $('#plan').innerHTML = `<div class="desk">${[0, 7, 14].map(n => sectionHtml(D.addDays(U.weekStart, n), n > 0)).join('')}</div>${mobileHtml()}`;
+    $('#plan').innerHTML = `<div class="desk">${legendHtml()}${[0, 7, 14].map(n => sectionHtml(D.addDays(U.weekStart, n), n > 0)).join('')}</div>${mobileHtml()}`;
   }
 
   function renderSide() {
