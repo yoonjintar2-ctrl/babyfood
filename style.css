@@ -340,3 +340,14 @@ body.dragging .add-sm{visibility:hidden}
 .mf{flex-wrap:wrap}
 
 @media (max-width:760px){ #sortBtn{height:32px;padding:0 9px;font-size:12px} }
+
+/* 만들 요리 */
+.cook{display:grid;grid-template-columns:52px minmax(0,1fr);gap:8px;align-items:center;width:100%;text-align:left;border:none;border-top:1px solid var(--line2);background:transparent;padding:8px 2px;font-size:13px}
+.cook:hover{background:#fafbfc}
+.cook .cw{font-size:11.5px;color:var(--muted);white-space:nowrap}
+.cook .cw.soon{color:var(--text);font-weight:700}
+.cook .cn{min-width:0;display:flex;flex-direction:column}
+.cook .cn b{font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cook .cn small{font-size:11px;color:var(--muted);line-height:1.5}
+.cook .cn small .s-ready{font-size:11px}
+.cook .cs{font-size:11px;white-space:nowrap;max-width:110px;overflow:hidden;text-overflow:ellipsis}

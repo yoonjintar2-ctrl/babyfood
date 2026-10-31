@@ -185,7 +185,34 @@
     $('#plan').innerHTML = `<div class="desk">${legendHtml()}${[0, 7, 14].map(n => sectionHtml(D.addDays(U.weekStart, n), n > 0)).join('')}</div>${mobileHtml()}`;
   }
 
+  // 만들 요리: 이번 주 월요일 이후 안 만든 메뉴를 이름별로 묶어 가장 이른 날짜 순
+  function cookItems() {
+    const from = thisMon(), today = D.todayIso();
+    const g = new Map();
+    for (const m of D.sortMenus(D.alive(S.menus))) {
+      if (m.done || m.date < from) continue;
+      const k = M.norm(m.name);
+      const it = g.get(k) || { name: m.name, list: [] };
+      it.list.push(m); g.set(k, it);
+    }
+    return [...g.values()].map(it => {
+      const first = it.list[0];
+      const shorts = it.list.map(m => EV.get(m.id)).filter(r => r && r.state === 'short');
+      const shortNames = [...new Set(shorts.flatMap(r => r.short.map(l => l.name)))];
+      const diff = Math.round((D.parse(first.date) - D.parse(today)) / 864e5);
+      const when = diff < 0 ? '지남' : diff === 0 ? '오늘' : diff === 1 ? '내일' : `${D.md(first.date)}(${D.dow(first.date)})`;
+      return { ...it, first, shortNames, when, diff };
+    });
+  }
+
   function renderSide() {
+    const ck = cookItems();
+    $('#ccount').textContent = ck.length || '';
+    $('#cookList').innerHTML = ck.length ? ck.map(it => `
+      <button class="cook" data-open="${it.first.id}">
+        <span class="cw${it.diff <= 0 ? ' soon' : ''}">${it.when}</span>
+        <span class="cn"><b>${esc(it.name)}</b><small>${esc(it.first.meal)}${it.list.length > 1 ? ` 외 ${it.list.length - 1}끼` : ''} · ${it.shortNames.length ? `<span class="s-short">부족 ${esc(it.shortNames.join(', '))}</span>` : '<span class="s-ready"><i></i>재료 준비 완료</span>'}</small></span>
+      </button>`).join('') : '<div class="emptytxt">만들 요리가 없어요.</div>';
     const fr = fridgeAlive();
     $('#fcount').textContent = fr.length || '';
     $('#fridgeList').innerHTML = fr.length ? fr.map(f => `
@@ -653,6 +680,7 @@
         inp.addEventListener('keydown', ev => { if (ev.key === 'Enter') inp.blur(); if (ev.key === 'Escape') { inp.value = f.qty; inp.blur(); } });
       }
     });
+    $('#cookList').addEventListener('click', e => { const b = e.target.closest('[data-open]'); if (b) openDetail(b.dataset.open); });
     $('#shopList').addEventListener('click', e => {
       const b = e.target.closest('[data-buy]'); if (!b) return;
       const it = $('#shopList')._items[+b.dataset.buy]; if (!it) return;
