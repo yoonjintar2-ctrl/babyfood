@@ -286,7 +286,7 @@
 
   function menuCatalog() {
     const m = new Map();
-    for (const mm of D.sortMenus(D.alive(S.menus))) m.set(mm.name, { name: mm.name, ings: mm.ings });
+    for (const mm of D.sortMenus(D.alive(S.menus))) m.set(mm.name, { name: mm.name, ings: mm.ings, hint: (mm.ings || []).length ? '재료 ' + mm.ings.map(g => g.name).slice(0, 4).join(', ') + (mm.ings.length > 4 ? ' 외' : '') : '' });
     return [...m.values()];
   }
 
@@ -470,6 +470,7 @@
         </div>
         <label class="lb" for="mname">메뉴 이름</label>
         <div class="acw"><input id="mname" class="in" placeholder="예: 소고기 브로콜리 진밥" value="${esc(m ? m.name : '')}" ${m ? 'data-ok="1"' : 'autofocus'}></div>
+        <div class="recall" hidden></div>
         <div class="lbr"><span class="lb">필요한 재료</span><small>수량은 0.5, 0.3처럼 소수점 가능</small></div>
         <div class="ings">${(ings.length ? ings : [{}, {}]).map(ingRowHtml).join('')}</div>
         <button type="button" class="addrow">+ 재료 한 줄 더</button>
@@ -525,14 +526,23 @@
 
     // 메뉴 이름 자동완성 → 예전 재료 불러오기
     const nameInp = $('#mname', md);
+    const recall = $('.recall', md);
     attachAC(nameInp, {
       kind: 'menu', onPick: (name, item) => {
-        if (!item || !item.ings || !item.ings.length) return;
+        if (!item || !item.ings || !item.ings.length) { recall.hidden = true; return; }
         const filled = $$('.iname', ingBox).some(i => i.value.trim());
-        if (filled && !confirm('전에 쓴 재료로 바꿀까요?')) return;
-        ingBox.innerHTML = '';
-        item.ings.forEach(g => addRow(g));
+        recall.innerHTML = `<div class="rt">전에 '${esc(name)}' 만들 때 쓴 재료를 불러올까요?</div>
+          <div class="chips">${item.ings.map(g => `<span>${esc(g.name)} ${D.fmtQ(num(g.qty) || 0)}${esc(g.unit)}</span>`).join('')}</div>
+          <div class="rb"><button type="button" class="btn sm dark" data-recall="yes">${filled ? '지금 재료 대신 불러오기' : '불러오기'}</button><button type="button" class="btn sm ghost" data-recall="no">괜찮아요</button></div>`;
+        recall.hidden = false;
+        recall._ings = item.ings;
       }
+    });
+    nameInp.addEventListener('input', () => { recall.hidden = true; });
+    recall.addEventListener('click', e => {
+      const b = e.target.closest('[data-recall]'); if (!b) return;
+      if (b.dataset.recall === 'yes') { ingBox.innerHTML = ''; recall._ings.forEach(g => addRow(g)); toast('재료를 불러왔어요. 양은 필요하면 고쳐 주세요'); }
+      recall.hidden = true;
     });
 
     md.addEventListener('click', e => { if (e.target.closest('[data-close]')) closeModal(); });

@@ -133,7 +133,7 @@
         const k = M.canon(l.name) + '|' + l.unit;
         const it = m.get(k) || { name: l.name, unit: l.unit, qty: 0, weeks: new Set(), menus: [] };
         it.qty += l.short;
-        it.weeks.add(mm.date < nextMon ? '이번 주' : mm.date < addDays(nextMon, 7) ? '다음 주' : md(mondayOf(mm.date)) + ' 주');
+        it.weeks.add(mm.date < nextMon ? '이번 주' : mm.date < addDays(nextMon, 7) ? '다음 주' : mm.date < addDays(nextMon, 14) ? '다다음 주' : md(mondayOf(mm.date)) + ' 주');
         it.menus.push(mm);
         m.set(k, it);
       }
