@@ -351,3 +351,20 @@ body.dragging .add-sm{visibility:hidden}
 .cook .cn small{font-size:11px;color:var(--muted);line-height:1.5}
 .cook .cn small .s-ready{font-size:11px}
 .cook .cs{font-size:11px;white-space:nowrap;max-width:110px;overflow:hidden;text-overflow:ellipsis}
+
+/* 상태 점 */
+.sd{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:6px;vertical-align:1px;flex:none}
+.sd-short{background:var(--blue)}
+.sd-ready{background:var(--text)}
+.sd-done{background:#c9cdd4}
+.legend>span{display:inline-flex;align-items:center}
+.legend .tg{display:inline-flex;align-items:center;gap:5px;margin-left:6px;padding-left:12px;border-left:1px solid var(--line3);color:var(--sub);cursor:pointer}
+.legend .tg input{margin:0;accent-color:var(--text)}
+body.hide-short .sl{display:none}
+.cook .cn b{display:flex;align-items:center}
+.legend>span,.legend .tg{white-space:nowrap}
+@media (max-width:760px){
+  .mday .legend{flex-wrap:wrap;gap:6px 12px}
+  .mday .legend .lgt{display:none}
+  .mday .legend .tg{margin-left:0;padding-left:0;border-left:none}
+}

@@ -12,7 +12,7 @@
   // ---------------- 상태 ----------------
   const LS_STATE = 'bf_state';
   let S = (() => { try { return JSON.parse(localStorage.getItem(LS_STATE)) || D.empty(); } catch (e) { return D.empty(); } })();
-  const U = { weekStart: D.mondayOf(D.todayIso()), selDay: D.todayIso(), mtab: 'plan' };
+  const U = { hideShort: (() => { try { return localStorage.getItem('bf_hideShort') === '1'; } catch (e) { return false; } })(), weekStart: D.mondayOf(D.todayIso()), selDay: D.todayIso(), mtab: 'plan' };
   let EV = new Map();
 
   function saveLocal() { try { localStorage.setItem(LS_STATE, JSON.stringify(S)); } catch (e) {} }
@@ -76,9 +76,14 @@
 
   function statusHtml(m) {
     const r = EV.get(m.id) || { state: 'ready', short: [] };
-    if (r.state === 'done') return '<span class="s-done">✓ 완성</span>';
-    if (r.state === 'ready') return '<span class="s-ready"><i></i>재료 준비 완료</span>';
-    return '<span class="s-short">부족 · ' + r.short.map(l => esc(l.name) + ' ' + D.fmtAmt(l.short, l.unit)).join(' · ') + '</span>';
+    if (r.state === 'done') return '<span class="s-done">완성</span>';
+    if (r.state === 'ready') return '<span class="s-ready">재료 준비 완료</span>';
+    return '<span class="s-short sl">부족 · ' + r.short.map(l => esc(l.name) + ' ' + D.fmtAmt(l.short, l.unit)).join(' · ') + '</span>';
+  }
+  // 이름 앞 상태 점: 파랑=부족, 검정=재료 준비 완료, 연회색=완성
+  function dotHtml(m) {
+    const st = (EV.get(m.id) || {}).state || 'ready';
+    return `<i class="sd sd-${st}" title="${st === 'done' ? '완성' : st === 'ready' ? '재료 준비 완료' : '재료 부족'}"></i>`;
   }
 
   // ---------------- 화면 ----------------
@@ -89,6 +94,7 @@
     renderSide();
     paintSync();
     document.body.dataset.mtab = U.mtab;
+    document.body.classList.toggle('hide-short', !!U.hideShort);
     const shopN = D.shopping(S, thisMon(), EV).length;
     $$('.shop-count').forEach(e => e.textContent = shopN ? shopN : '');
   }
@@ -116,7 +122,7 @@
         cells += `<div class="c${ms.length > 1 ? ' multi' : ''}" data-slot="${d}|${meal}">` + ms.map(m => {
           cnt++; const st = (EV.get(m.id) || {}).state;
           if (st === 'done') done++; else if (st === 'ready') ready++; else short++;
-          return `<button class="mi${st === 'done' ? ' done' : ''}" data-open="${m.id}" draggable="true" data-drag="${m.id}" title="끌어서 다른 칸으로 옮기기 (Alt 누르고 끌면 복사)"><span class="n">${esc(m.name)}</span>${statusHtml(m)}</button>`;
+          return `<button class="mi${st === 'done' ? ' done' : ''}" data-open="${m.id}" draggable="true" data-drag="${m.id}" title="끌어서 다른 칸으로 옮기기 (Alt 누르고 끌면 복사)"><span class="n">${dotHtml(m)}${esc(m.name)}</span>${statusHtml(m)}</button>`;
         }).join('') + `<button class="add-sm" data-add="${d}|${meal}" aria-label="${D.md(d)} ${meal} 요리 하나 더 추가">+ 하나 더</button></div>`;
       }
     }
@@ -169,7 +175,7 @@
     for (const meal of D.MEALS) {
       const ms = menusAt(U.selDay, meal);
       body += `<div class="mslot" data-slot="${U.selDay}|${meal}"><div class="ml"><span>${meal}</span>${ms.length ? `<button class="tbtn" data-add="${U.selDay}|${meal}">+ 하나 더</button>` : ''}</div>`;
-      body += ms.map(m => `<button class="card${m.done ? ' done' : ''}" data-open="${m.id}"><span class="n">${esc(m.name)}</span>${statusHtml(m)}</button>`).join('');
+      body += ms.map(m => `<button class="card${m.done ? ' done' : ''}" data-open="${m.id}"><span class="n">${dotHtml(m)}${esc(m.name)}</span>${statusHtml(m)}</button>`).join('');
       if (!ms.length) body += `<button class="card add" data-add="${U.selDay}|${meal}">+ 추가</button>`;
       body += '</div>';
     }
@@ -179,7 +185,8 @@
       <div class="mday"><div class="mdt"><b>${dd.getMonth() + 1}월 ${dd.getDate()}일 ${D.dow(U.selDay)}요일</b><span>${all.length ? '완성 ' + doneN + ' / ' + all.length : ''}</span></div>
       ${legendHtml()}${body}${nutCard(U.selDay)}</div></div>`;
   }
-  const legendHtml = () => '<div class="legend"><span class="lgt">표시 안내</span><span class="s-short">부족 · 재료명</span><span class="s-ready"><i></i>재료 준비 완료</span><span class="s-done">✓ 완성</span></div>';
+  const legendHtml = () => `<div class="legend"><span class="lgt">표시 안내</span><span><i class="sd sd-short"></i>부족</span><span><i class="sd sd-ready"></i>재료 준비 완료</span><span><i class="sd sd-done"></i>완성</span>
+    <label class="tg"><input type="checkbox" data-toggle-short ${U.hideShort ? '' : 'checked'}>부족한 재료 보기</label></div>`;
 
   function renderPlan() {
     $('#plan').innerHTML = `<div class="desk">${legendHtml()}${[0, 7, 14].map(n => sectionHtml(D.addDays(U.weekStart, n), n > 0)).join('')}</div>${mobileHtml()}`;
@@ -211,7 +218,7 @@
     $('#cookList').innerHTML = ck.length ? ck.map(it => `
       <button class="cook" data-open="${it.first.id}">
         <span class="cw${it.diff <= 0 ? ' soon' : ''}">${it.when}</span>
-        <span class="cn"><b>${esc(it.name)}</b><small>${esc(it.first.meal)}${it.list.length > 1 ? ` 외 ${it.list.length - 1}끼` : ''} · ${it.shortNames.length ? `<span class="s-short">부족 ${esc(it.shortNames.join(', '))}</span>` : '<span class="s-ready"><i></i>재료 준비 완료</span>'}</small></span>
+        <span class="cn"><b><i class="sd sd-${it.shortNames.length ? 'short' : 'ready'}"></i>${esc(it.name)}</b><small>${esc(it.first.meal)}${it.list.length > 1 ? ` 외 ${it.list.length - 1}끼` : ''}${it.shortNames.length ? `<span class="s-short sl"> · 부족 ${esc(it.shortNames.join(', '))}</span>` : ' · 재료 준비 완료'}</small></span>
       </button>`).join('') : '<div class="emptytxt">만들 요리가 없어요.</div>';
     const fr = fridgeAlive();
     $('#fcount').textContent = fr.length || '';
@@ -964,6 +971,14 @@
     window.addEventListener('focus', () => { if (Date.now() - lastSync > 10000) doPull(); });
     setInterval(() => { if (document.visibilityState === 'visible' && ME && !stack.length) doPull(); }, 30000);
   }
+
+  document.addEventListener('change', e => {
+    if (!e.target.matches('[data-toggle-short]')) return;
+    U.hideShort = !e.target.checked;
+    try { localStorage.setItem('bf_hideShort', U.hideShort ? '1' : '0'); } catch (err) {}
+    document.body.classList.toggle('hide-short', U.hideShort);
+    $$('[data-toggle-short]').forEach(c => { c.checked = !U.hideShort; });
+  });
 
   // ---------------- 시작 ----------------
   let channel = null;
