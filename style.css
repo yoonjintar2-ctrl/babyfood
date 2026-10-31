@@ -338,3 +338,5 @@ body.dragging .add-sm{visibility:hidden}
 .ordbtns .btn{padding:0 10px}
 .ordbtns .btn:disabled{opacity:.35;cursor:default}
 .mf{flex-wrap:wrap}
+
+@media (max-width:760px){ #sortBtn{height:32px;padding:0 9px;font-size:12px} }

@@ -88,8 +88,58 @@
 
   const mealIdx = m => Math.max(0, MEALS.indexOf(m));
   // 같은 끼니 안 순서: 사용자가 정한 ord 먼저, 없으면 만든 순서
-  const ordKey = x => (x.ord != null ? x.ord : 1e15 + (x.createdAt || 0));
-  const sortMenus = arr => arr.slice().sort((a, b) => a.date.localeCompare(b.date) || mealIdx(a.meal) - mealIdx(b.meal) || ordKey(a) - ordKey(b));
+  // ---------- 같은 끼니 안 순서 ----------
+  // 1) 직접 순서를 정한 끼니(전부 ord 있음)는 그 순서
+  // 2) 아니면, 메뉴 구성이 똑같은 다른 끼니 중 가장 최근에 직접 정한 순서(템플릿)를 따름
+  // 3) 둘 다 없으면 만든 순서
+  const slotKey = names => names.slice().sort().join('\u0001');
+  let TPL = new Map(); // 구성 키 → { names:[순서], at }
+  function buildTemplates(menus) {
+    const g = new Map();
+    for (const m of menus) { if (m.deleted) continue; const k = m.date + '|' + m.meal; (g.get(k) || g.set(k, []).get(k)).push(m); }
+    const tpl = new Map();
+    for (const arr of g.values()) {
+      if (arr.length < 2 || !arr.every(m => m.ord != null)) continue;
+      const at = Math.max(...arr.map(m => m.ordAt || 0));
+      const names = arr.slice().sort((a, b) => a.ord - b.ord).map(m => m.name);
+      const k = slotKey(names), cur = tpl.get(k);
+      if (!cur || at > cur.at) tpl.set(k, { names, at });
+    }
+    TPL = tpl;
+    return tpl;
+  }
+  function orderSlot(arr) {
+    const byCreated = arr.slice().sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+    if (arr.length > 1 && arr.every(m => m.ord != null)) return arr.slice().sort((a, b) => a.ord - b.ord || (a.createdAt || 0) - (b.createdAt || 0));
+    const t = arr.length > 1 && TPL.get(slotKey(arr.map(m => m.name)));
+    if (!t) return arr.some(m => m.ord != null) ? arr.slice().sort((a, b) => (a.ord ?? 1e9) - (b.ord ?? 1e9) || (a.createdAt || 0) - (b.createdAt || 0)) : byCreated;
+    const pool = byCreated.slice(), out = [];
+    for (const n of t.names) { const i = pool.findIndex(m => m.name === n); if (i >= 0) out.push(pool.splice(i, 1)[0]); }
+    return out.concat(pool);
+  }
+  function sortMenus(arr) {
+    const g = new Map();
+    for (const m of arr) { const k = m.date + '|' + m.meal; (g.get(k) || g.set(k, []).get(k)).push(m); }
+    const keys = [...g.keys()].sort((a, b) => { const [da, ma] = a.split('|'), [db, mb] = b.split('|'); return da.localeCompare(db) || mealIdx(ma) - mealIdx(mb); });
+    return keys.flatMap(k => orderSlot(g.get(k)));
+  }
+  // 자동 정렬: 템플릿과 순서가 다른 끼니를 템플릿대로 맞춤 → 바뀐 끼니 목록
+  function autoSortPlan(menus) {
+    buildTemplates(menus);
+    const g = new Map();
+    for (const m of menus) { if (m.deleted) continue; const k = m.date + '|' + m.meal; (g.get(k) || g.set(k, []).get(k)).push(m); }
+    const changes = [];
+    for (const arr of g.values()) {
+      if (arr.length < 2) continue;
+      const t = TPL.get(slotKey(arr.map(m => m.name))); if (!t) continue;
+      const cur = orderSlot(arr).map(m => m.name).join('\u0001');
+      if (arr.every(m => m.ord != null) && cur === t.names.join('\u0001')) continue;
+      const pool = arr.slice().sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0)), out = [];
+      for (const n of t.names) { const i = pool.findIndex(m => m.name === n); if (i >= 0) out.push(pool.splice(i, 1)[0]); }
+      changes.push({ list: out.concat(pool), at: t.at });
+    }
+    return changes;
+  }
 
   /**
    * 판정: 이번 주 월요일 이후의 안 만든 메뉴에 날짜 순서대로 냉장고 재료를 배정.
@@ -143,7 +193,7 @@
     return [...m.values()].sort((a, b) => a.menus[0].date.localeCompare(b.menus[0].date));
   }
 
-  const api = { MEALS, UNITS, COMMON, iso, parse, addDays, mondayOf, todayIso, dow, md, pad, fmtQ, fmtAmt, toBase, uid, now, empty, alive, merge, catalog, aliasMap, stockMap, evaluate, shopping, sortMenus };
+  const api = { MEALS, UNITS, COMMON, iso, parse, addDays, mondayOf, todayIso, dow, md, pad, fmtQ, fmtAmt, toBase, uid, now, empty, alive, merge, catalog, aliasMap, stockMap, evaluate, shopping, sortMenus, buildTemplates, autoSortPlan };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.Data = api;
 })(typeof window !== 'undefined' ? window : globalThis);

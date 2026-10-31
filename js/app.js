@@ -83,6 +83,7 @@
 
   // ---------------- 화면 ----------------
   function render() {
+    D.buildTemplates(S.menus);
     EV = D.evaluate(S, thisMon());
     renderPlan();
     renderSide();
@@ -760,7 +761,7 @@
     const sameSlot = m.date === date && m.meal === meal;
     if (sameSlot && !copy && menusAt(date, meal).indexOf(m) === at) return;
     const touched = [...new Set([...others, ...menusAt(m.date, m.meal), m])];
-    const snap = touched.map(x => [x, { date: x.date, meal: x.meal, ord: x.ord }]);
+    const snap = touched.map(x => [x, { date: x.date, meal: x.meal, ord: x.ord, ordAt: x.ordAt }]);
     let target = m, made = null;
     if (copy) {
       const t = D.now();
@@ -770,12 +771,12 @@
     const list = others.slice(); list.splice(at, 0, target);
     const t = D.now();
     if (!copy) Object.assign(m, { date, meal });
-    list.forEach((x, i) => { if (x.ord !== i || x === target) { x.ord = i; x.updatedAt = t; } });
+    list.forEach((x, i) => { x.ord = i; x.ordAt = t; x.updatedAt = t; });
     commit();
     const msg = copy ? `${D.md(date)} ${meal}에 복사했어요` : sameSlot ? '순서를 바꿨어요' : `${D.md(date)} (${D.dow(date)}) ${meal}로 옮겼어요`;
     toast(msg, () => {
       const u = D.now();
-      snap.forEach(([x, v]) => { Object.assign(x, v, { updatedAt: u }); if (v.ord == null) delete x.ord; });
+      snap.forEach(([x, v]) => { Object.assign(x, v, { updatedAt: u }); if (v.ord == null) delete x.ord; if (v.ordAt == null) delete x.ordAt; });
       if (made) Object.assign(made, { deleted: true, updatedAt: u });
       commit();
     });
@@ -794,6 +795,22 @@
     toast(`${D.md(date)} ${meal}에 붙여넣었어요`, () => { Object.assign(c, { deleted: true, updatedAt: D.now() }); if (U.paste) U.paste.n = Math.max(0, U.paste.n - 1); commit(); });
   }
   document.addEventListener('keydown', e => { if (e.key === 'Escape' && U.paste && !stack.length) endPaste(); });
+
+  // ---------------- 자동 정렬 ----------------
+  function autoSort() {
+    const ch = D.autoSortPlan(S.menus);
+    if (!ch.length) return toast('맞출 끼니가 없어요. 같은 구성의 끼니에서 한 번 순서를 정해 두면 그 순서로 맞춰요');
+    const snap = ch.flatMap(c => c.list).map(x => [x, { ord: x.ord, ordAt: x.ordAt }]);
+    const t = D.now();
+    // 기준 끼니보다 새 기준이 되지 않도록 ordAt 은 기준과 같게
+    ch.forEach(c => c.list.forEach((x, i) => { x.ord = i; x.ordAt = c.at; x.updatedAt = t; }));
+    commit();
+    toast(`${ch.length}끼 순서를 맞췄어요`, () => {
+      const u = D.now();
+      snap.forEach(([x, v]) => { if (v.ord == null) delete x.ord; else x.ord = v.ord; if (v.ordAt == null) delete x.ordAt; else x.ordAt = v.ordAt; x.updatedAt = u; });
+      commit();
+    });
+  }
 
   // ---------------- 계정 ----------------
   function openAccount() {
@@ -911,6 +928,7 @@
     $('#nextW').onclick = () => { U.weekStart = D.addDays(U.weekStart, 7); renderPlan(); };
     $('#todayW').onclick = () => { U.weekStart = thisMon(); U.selDay = D.todayIso(); renderPlan(); };
     $('#addBtn').onclick = () => openEdit({ date: U.mtab === 'plan' && window.innerWidth <= 760 ? U.selDay : D.todayIso() });
+    $('#sortBtn').onclick = autoSort;
     $('#setBtn').onclick = () => ME ? openAccount() : showAuth(true);
     $('#sync').onclick = () => { if (syncState === 'error') doPush(); else if (!ME) showAuth(true); };
     $$('.mtabs [data-mtab]').forEach(b => b.onclick = () => { U.mtab = b.dataset.mtab; $$('.mtabs [data-mtab]').forEach(x => x.classList.toggle('on', x === b)); render(); });
