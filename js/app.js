@@ -324,6 +324,7 @@
     input.addEventListener('focus', () => { if (input.value.trim() && input.dataset.ok !== '1') build(); });
     input.addEventListener('blur', () => setTimeout(close, 160));
     input.addEventListener('keydown', e => {
+      if (e.isComposing || e.keyCode === 229) return;
       if (!box.classList.contains('open')) { if (e.key === 'ArrowDown') { build(); e.preventDefault(); } return; }
       if (e.key === 'ArrowDown') { act = Math.min(items.length - 1, act + 1); paint(); e.preventDefault(); }
       else if (e.key === 'ArrowUp') { act = Math.max(0, act - 1); paint(); e.preventDefault(); }
@@ -523,9 +524,9 @@
     const units = D.UNITS.includes(unit) ? D.UNITS : [unit, ...D.UNITS];
     return `<div class="irw"><div class="ir">
       <div class="acw"><input class="iname" aria-label="재료 이름" placeholder="재료 이름" value="${esc(g.name || '')}" ${g.name ? 'data-ok="1"' : ''}></div>
-      <input class="iqty" aria-label="수량" inputmode="decimal" placeholder="0" value="${g.qty != null && g.qty !== '' ? esc(D.fmtQ(num(g.qty))) : ''}">
+      <input class="iqty" aria-label="수량" inputmode="decimal" autocomplete="off" placeholder="0" value="${g.qty != null && g.qty !== '' ? esc(D.fmtQ(num(g.qty))) : ''}">
       <select class="iunit" aria-label="단위">${units.map(u => `<option${u === unit ? ' selected' : ''}>${esc(u)}</option>`).join('')}</select>
-      <button type="button" class="ib rm" aria-label="재료 줄 삭제">×</button></div><div class="has"></div></div>`;
+      <button type="button" class="ib rm" tabindex="-1" aria-label="재료 줄 삭제">×</button></div><div class="has"></div></div>`;
   }
 
   function openEdit({ id, date, meal }) {
@@ -574,20 +575,31 @@
         h.className = 'has' + (need > have ? ' short' : '');
       }
     };
+    const setUnitFor = (row, name, item) => {
+      const sel = $('.iunit', row);
+      if (sel.dataset.manual) return;
+      const f = D.alive(S.fridge).find(x => x.name === name);
+      const u = f ? f.unit : item && item.unit;
+      if (!u) return;
+      if (![...sel.options].some(o => o.value === u)) sel.insertAdjacentHTML('afterbegin', `<option>${esc(u)}</option>`);
+      sel.value = u;
+    };
     const wireRow = row => {
       const inp = $('.iname', row);
       attachAC(inp, {
-        kind: 'ing', onPick: (name, item) => {
-          if (item && item.unit) {
-            const sel = $('.iunit', row);
-            const f = D.alive(S.fridge).find(x => x.name === name);
-            const u = f ? f.unit : item.unit;
-            if (![...sel.options].some(o => o.value === u)) sel.insertAdjacentHTML('afterbegin', `<option>${esc(u)}</option>`);
-            sel.value = u;
-          }
-          hasLine(row); $('.iqty', row).focus();
-        }
+        kind: 'ing', onPick: (name, item) => { setUnitFor(row, name, item); hasLine(row); $('.iqty', row).focus(); }
       });
+      // Tab 으로 빠져나갈 때도 이미 있는 재료면 단위를 맞춰 둔다
+      inp.addEventListener('change', () => {
+        const n = inp.value.trim(); if (!n) return;
+        const it = D.catalog(S).find(c => c.name === n);
+        if (it) setUnitFor(row, n, it);
+        hasLine(row);
+      });
+      $('.iunit', row).addEventListener('change', e => { e.target.dataset.manual = '1'; });
+      // 수량 칸에는 숫자만 (한글 입력기에서 넘어온 글자 제거)
+      const q = $('.iqty', row);
+      q.addEventListener('input', () => { const v = q.value.replace(/[^0-9.,]/g, '').replace(',', '.'); if (v !== q.value) q.value = v; });
       ['input', 'change'].forEach(ev => row.addEventListener(ev, () => hasLine(row)));
       $('.rm', row).addEventListener('click', () => { row.remove(); if (!$('.irw', ingBox)) addRow(); });
       hasLine(row);
@@ -595,6 +607,27 @@
     const addRow = (g) => { ingBox.insertAdjacentHTML('beforeend', ingRowHtml(g)); const row = ingBox.lastElementChild; wireRow(row); return row; };
     $$('.irw', ingBox).forEach(wireRow);
     $('.addrow', md).addEventListener('click', () => $('.iname', addRow()).focus());
+    // Tab 순서: 재료 이름 → 수량 → 단위 → 다음 재료 이름 (마지막이면 새 줄)
+    ingBox.addEventListener('keydown', e => {
+      if (e.key !== 'Tab') return;
+      const t = e.target, row = t.closest('.irw'); if (!row) return;
+      const rows = $$('.irw', ingBox), ri = rows.indexOf(row);
+      let next = null;
+      if (!e.shiftKey) {
+        if (t.matches('.iname')) next = () => $('.iqty', row);
+        else if (t.matches('.iqty')) next = () => $('.iunit', row);
+        else if (t.matches('.iunit')) next = () => $('.iname', rows[ri + 1] || addRow());
+      } else {
+        if (t.matches('.iunit')) next = () => $('.iqty', row);
+        else if (t.matches('.iqty')) next = () => $('.iname', row);
+        else if (t.matches('.iname') && ri > 0) next = () => $('.iunit', rows[ri - 1]);
+      }
+      if (!next) return;
+      e.preventDefault();
+      // 맥 한글 입력 중이면 먼저 지금 칸에 글자를 확정시키고 옮긴다
+      if (e.isComposing || e.keyCode === 229) { t.blur(); setTimeout(() => { const n = next(); n && n.focus(); }, 0); }
+      else { const n = next(); n && n.focus(); }
+    });
 
     // 메뉴 이름 자동완성 → 예전 재료 불러오기
     const nameInp = $('#mname', md);
@@ -1049,6 +1082,30 @@
     document.body.classList.toggle('hide-short', U.hideShort);
     $$('[data-toggle-short]').forEach(c => { c.checked = !U.hideShort; });
   });
+
+  document.addEventListener('keydown', e => {
+    if (e.key !== 'Tab' || !(e.isComposing || e.keyCode === 229)) return;
+    const t = e.target;
+    if (!t.matches || !t.matches('input, textarea') || t.closest('.ings')) return;
+    e.preventDefault();
+    const back = e.shiftKey;
+    const scope = t.closest('.modal, form, aside, #auth') || document.body;
+    t.blur();
+    setTimeout(() => {
+      const f = $$('input, select, textarea, button', scope).filter(x => !x.disabled && x.tabIndex !== -1 && x.offsetParent !== null);
+      const i = f.indexOf(t), n = f[back ? i - 1 : i + 1];
+      if (n) n.focus();
+    }, 0);
+  }, true);
+
+  // 숫자 칸(수량 등)에는 숫자만
+  document.addEventListener('input', e => {
+    const t = e.target;
+    if (!t.matches || !t.matches('input[inputmode=decimal], input[inputmode=numeric]') || e.isComposing) return;
+    const v = t.value.replace(/[^0-9.,]/g, '').replace(',', '.');
+    if (v !== t.value) t.value = v;
+  });
+  document.addEventListener('compositionend', e => { const t = e.target; if (t.matches && t.matches('input[inputmode=decimal], input[inputmode=numeric]')) t.value = t.value.replace(/[^0-9.,]/g, ''); });
 
   // ---------------- 시작 ----------------
   let channel = null;
