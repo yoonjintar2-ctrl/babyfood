@@ -12,7 +12,7 @@
   // ---------------- 상태 ----------------
   const LS_STATE = 'bf_state';
   let S = (() => { try { return JSON.parse(localStorage.getItem(LS_STATE)) || D.empty(); } catch (e) { return D.empty(); } })();
-  const U = { hideShort: (() => { try { return localStorage.getItem('bf_hideShort') === '1'; } catch (e) { return false; } })(), weekStart: D.mondayOf(D.todayIso()), selDay: D.todayIso(), mtab: 'plan' };
+  const U = { hideShort: (() => { try { const v = localStorage.getItem('bf_hideShort'); return v == null ? true : v === '1'; } catch (e) { return true; } })(), weekStart: D.mondayOf(D.todayIso()), selDay: D.todayIso(), mtab: 'plan' };
   let EV = new Map();
 
   function saveLocal() { try { localStorage.setItem(LS_STATE, JSON.stringify(S)); } catch (e) {} }
@@ -77,6 +77,11 @@
   // 상태 배지: 재료 필요(파랑) · 요리 필요(검정) · 완성(회색)
   const PILL = { short: '재료 필요', ready: '요리 필요', done: '완성' };
   const pill = st => `<span class="pill p-${st}">${PILL[st]}</span>`;
+  function shortLine(m) {
+    const r = EV.get(m.id);
+    if (!r || r.state !== 'short') return '';
+    return `<span class="s-short sl">${r.short.map(l => esc(l.name) + ' ' + D.fmtAmt(l.short, l.unit)).join(' · ')}</span>`;
+  }
   function statusHtml(m) {
     const r = EV.get(m.id) || { state: 'ready', short: [] };
     if (r.state !== 'short') return `<span class="stl">${pill(r.state)}</span>`;
@@ -124,13 +129,13 @@
         cells += `<div class="c${ms.length > 1 ? ' multi' : ''}" data-slot="${d}|${meal}">` + ms.map(m => {
           cnt++; const st = (EV.get(m.id) || {}).state;
           if (st === 'done') done++; else if (st === 'ready') ready++; else short++;
-          return `<button class="mi${st === 'done' ? ' done' : ''}" data-open="${m.id}" draggable="true" data-drag="${m.id}" title="${esc(m.name)} · 끌어서 옮기기 (Alt 누르고 끌면 복사)"><span class="n">${dotHtml(m)}${esc(m.name)}</span>${statusHtml(m)}</button>`;
+          return `<button class="mi${st === 'done' ? ' done' : ''}" data-open="${m.id}" draggable="true" data-drag="${m.id}" title="${esc(m.name)} · 끌어서 옮기기 (Alt 누르고 끌면 복사)"><span class="row1">${dotHtml(m)}<span class="n">${esc(m.name)}</span>${pill((EV.get(m.id) || {}).state || 'ready')}</span>${shortLine(m)}</button>`;
         }).join('') + `<button class="add-sm" data-add="${d}|${meal}" aria-label="${D.md(d)} ${meal} 요리 하나 더 추가">+ 하나 더</button></div>`;
       }
     }
     cells += `<div class="rh nh">영양<small>하루</small></div>` + days.map(d => nutCell(d)).join('');
     const stats = cnt ? `메뉴 ${cnt}개 · 재료 필요 ${short} · 요리 필요 ${ready} · 완성 ${done}${emptyN ? ' · 빈 칸 ' + emptyN : ''}` : '아직 등록한 식단이 없어요';
-    const copyBtn = second ? `<button class="btn sm" data-copyweek="${mon}">${esc(weekTitle(D.addDays(mon, -7)))} 식단 복사</button>` : '';
+    const copyBtn = '';
     return `<section class="wk">
       <div class="st"><h2>${weekTitle(mon)}</h2><span>${D.md(mon)} – ${D.md(D.addDays(mon, 6))}</span><span class="stats">${stats}</span>${copyBtn}</div>
       <div class="tb"><div class="gr">${cells}</div></div>
@@ -148,7 +153,7 @@
       <b>${Math.round(n.kcal)}<small>kcal</small></b>
       <span>단백질 ${n.protein.toFixed(1)}g <em>${pct(n.protein, R.protein)}%</em></span>
       <span>철분 ${n.iron.toFixed(1)}mg <em>${pct(n.iron, R.iron)}%</em></span>
-      ${n.missing.length ? `<span class="miss">제외 ${n.missing.length}개</span>` : ''}</div>`;
+      ${n.missing.length ? `<span class="miss" tabindex="0" data-tip="영양정보 없어 제외: ${esc(n.missing.join(', '))}">제외 ${n.missing.length}개</span>` : ''}</div>`;
   }
   function nutCard(d) {
     const n = nutOfDay(d), R = window.Nutri.REF;
@@ -177,7 +182,7 @@
     for (const meal of D.MEALS) {
       const ms = menusAt(U.selDay, meal);
       body += `<div class="mslot" data-slot="${U.selDay}|${meal}"><div class="ml"><span>${meal}</span>${ms.length ? `<button class="tbtn" data-add="${U.selDay}|${meal}">+ 하나 더</button>` : ''}</div>`;
-      body += ms.map(m => `<button class="card${m.done ? ' done' : ''}" data-open="${m.id}"><span class="n">${dotHtml(m)}${esc(m.name)}</span>${statusHtml(m)}</button>`).join('');
+      body += ms.map(m => `<button class="card${m.done ? ' done' : ''}" data-open="${m.id}"><span class="row1">${dotHtml(m)}<span class="n">${esc(m.name)}</span>${pill((EV.get(m.id) || {}).state || 'ready')}</span>${shortLine(m)}</button>`).join('');
       if (!ms.length) body += `<button class="card add" data-add="${U.selDay}|${meal}">+ 추가</button>`;
       body += '</div>';
     }
@@ -1069,6 +1074,11 @@
     $('#todayW').onclick = () => { U.weekStart = thisMon(); U.selDay = D.todayIso(); renderPlan(); };
     $('#addBtn').onclick = () => openEdit({ date: U.mtab === 'plan' && window.innerWidth <= 760 ? U.selDay : D.todayIso() });
     $('#sortBtn').onclick = autoSort;
+    const openSide = on => { document.body.classList.toggle('side-open', on); if (on) setTimeout(() => $('#side .x').focus(), 30); };
+    $('#fridgeBtn').onclick = () => openSide(!document.body.classList.contains('side-open'));
+    $('#sideClose').onclick = () => openSide(false);
+    $('#sideBg').onclick = () => openSide(false);
+    document.addEventListener('keydown', e => { if (e.key === 'Escape' && document.body.classList.contains('side-open') && !stack.length && !document.querySelector('.ac.open')) openSide(false); });
     $('#setBtn').onclick = () => ME ? openAccount() : showAuth(true);
     $('#sync').onclick = () => { if (syncState === 'error') doPush(); else if (!ME) showAuth(true); };
     $$('.mtabs [data-mtab]').forEach(b => b.onclick = () => { U.mtab = b.dataset.mtab; $$('.mtabs [data-mtab]').forEach(x => x.classList.toggle('on', x === b)); render(); });

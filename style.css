@@ -420,3 +420,48 @@ body.hide-short .sl{display:none}
 .gr>*{min-width:0}
 .mi{min-width:0;max-width:100%}
 .stl .s-short{min-width:0;overflow-wrap:anywhere}
+
+/* ---------- v3: 식단표 넓게, 냉장고는 팝업 ---------- */
+.layout{max-width:1600px;display:block}
+#plan{width:100%}
+.mtabs{display:none!important}
+.sidebg{display:none;position:fixed;inset:0;z-index:40;background:rgba(22,24,29,.28)}
+#side{position:fixed!important;top:0;right:0;bottom:0;z-index:45;width:380px;max-width:100vw;max-height:none!important;border-radius:0!important;border:none!important;border-left:1px solid var(--line)!important;overflow:auto;transform:translateX(105%);transition:transform .2s ease;box-shadow:-12px 0 32px rgba(20,24,30,.12);padding:0 20px 24px!important;display:block!important}
+body.side-open #side{transform:none}
+body.side-open .sidebg{display:block}
+.sidehd{position:sticky;top:0;background:#fff;z-index:2;display:flex;justify-content:space-between;align-items:center;padding:14px 0 10px;margin-bottom:6px;border-bottom:1px solid var(--line2)}
+.sidehd b{font-size:15px}
+#fridgeBtn .badge:not(:empty){display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:#fef3c7;color:#854d0e;font-size:11px;font-weight:700;margin-left:4px}
+.gr{grid-template-columns:44px repeat(7,minmax(150px,1fr))}
+/* 같은 끼니 요리 사이 구분선 없음 */
+.c.multi .mi+.mi{border-top:none!important}
+/* 한 줄: 점 · 이름 · 배지 */
+.mi .row1{display:flex;align-items:center;gap:5px;width:100%;min-width:0}
+.mi .row1 .n{flex:0 1 auto;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block}
+.mi .row1 .sd{margin-right:0}
+.mi .row1 .pill{margin-left:auto}
+.mi>.sl{font-size:10.5px;line-height:1.35;padding-left:12px}
+/* 영양 제외 툴팁 */
+.c.nut{overflow:visible}
+.miss{position:relative;cursor:help;text-decoration:underline dotted;text-underline-offset:2px}
+.miss:hover::after,.miss:focus::after{content:attr(data-tip);position:absolute;left:0;bottom:calc(100% + 6px);z-index:30;width:max-content;max-width:220px;white-space:normal;background:var(--text);color:#fff;font-size:11.5px;line-height:1.4;padding:6px 9px;border-radius:7px;box-shadow:0 6px 16px rgba(0,0,0,.18)}
+@media (max-width:760px){
+  #side{width:100vw}
+  #fridgeBtn{height:32px;padding:0 9px;font-size:12px}
+  .layout{padding:0}
+}
+
+.mi .row1 .pill{margin-left:0}
+.pill{height:15px;padding:0 5px;font-size:9.5px}
+.mi .row1{gap:4px}
+.card .row1{display:flex;align-items:center;gap:6px;min-width:0;width:100%}
+.card .row1 .n{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block}
+.card .row1 .sd{margin-right:0}
+.card .row1 .pill{height:17px;font-size:10.5px;padding:0 7px}
+.card>.sl{font-size:12px;padding-left:13px}
+@media (max-width:760px){
+  .lg2{display:none}
+  .sync{display:none}
+  #addBtn{width:34px;padding:0;font-size:17px}
+  .top{gap:6px}
+}

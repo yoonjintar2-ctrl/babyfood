@@ -19,23 +19,22 @@
   </div>
   <div class="tr">
     <button id="sync" class="sync" type="button"></button>
-    <button id="sortBtn" class="btn" title="메뉴 구성이 같은 끼니는 가장 최근에 정한 순서대로 맞춰요">자동 정렬</button>
-    <button id="addBtn" class="btn dark">+ 식단 추가</button>
+    <button id="fridgeBtn" class="btn">냉장고 <span class="shop-count badge"></span></button>
+    <button id="sortBtn" class="btn" title="메뉴 구성이 같은 끼니는 가장 최근에 정한 순서대로 맞춰요"><span class="lg2">자동 </span>정렬</button>
+    <button id="addBtn" class="btn dark" aria-label="식단 추가">+<span class="lg2"> 식단 추가</span></button>
     <button id="setBtn" class="avatar" aria-label="계정"></button>
   </div>
 </header>
 
 <div id="pasteBar" class="pastebar" hidden role="status"></div>
 
-<nav class="mtabs" aria-label="화면 전환">
-  <button class="on" data-mtab="plan">식단표</button>
-  <button data-mtab="fridge">냉장고 · 장보기 <span class="shop-count"></span></button>
-</nav>
 
 <main class="layout">
   <div id="plan"></div>
 
-  <aside id="side">
+  <div id="sideBg" class="sidebg"></div>
+  <aside id="side" aria-label="냉장고 · 장보기 · 만들 요리">
+    <div class="sidehd"><b>냉장고 · 장보기</b><button id="sideClose" class="x" aria-label="닫기">×</button></div>
     <div class="sh"><h2>냉장고 <span id="fcount" class="cnt"></span></h2></div>
     <form id="fadd" class="fadd" autocomplete="off">
       <div class="acw fnm"><input id="fname" class="in" placeholder="재료 추가 (예: 애호박)" aria-label="재료 이름"></div>
