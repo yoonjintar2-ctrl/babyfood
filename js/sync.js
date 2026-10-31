@@ -1,45 +1,70 @@
-// 깃허브 저장소의 data/plan.json 을 공용 저장소로 쓴다 (기기마다 토큰 한 번 입력)
+// 수파베이스 — 아이디/비밀번호 로그인 + 공용 식단 한 벌(plan 테이블 id=1)
 (function (root) {
-  const CFG = { owner: 'yoonjintar2-ctrl', repo: 'babyfood', path: 'data/plan.json', branch: 'main' };
-  const API = `https://api.github.com/repos/${CFG.owner}/${CFG.repo}/contents/${CFG.path}`;
-  const LS_TOKEN = 'bf_token', LS_SHA = 'bf_sha';
-
+  const CFG = {
+    url: 'https://eubwzdonqosisrcovvou.supabase.co',
+    anon: 'sb_publishable_cGUYnHmHd5o6b211oQroQw_PsD-LC7h',
+    domain: 'babyfood.app', // 아이디를 이메일 형식으로 바꿀 때 쓰는 가짜 도메인 (메일은 보내지 않음)
+  };
+  const LS_REV = 'bf_rev';
   const get = k => { try { return localStorage.getItem(k); } catch (e) { return null; } };
   const set = (k, v) => { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch (e) {} };
 
-  const enc = s => { const b = new TextEncoder().encode(s); let bin = ''; for (let i = 0; i < b.length; i += 0x8000) bin += String.fromCharCode.apply(null, b.subarray(i, i + 0x8000)); return btoa(bin); };
-  const dec = b64 => new TextDecoder().decode(Uint8Array.from(atob(b64.replace(/\s/g, '')), c => c.charCodeAt(0)));
+  const sb = root.supabase.createClient(CFG.url, CFG.anon, { auth: { persistSession: true, autoRefreshToken: true, storageKey: 'bf_auth' } });
+  const idToEmail = id => String(id).trim().toLowerCase() + '@' + CFG.domain;
+  const emailToId = e => String(e || '').split('@')[0];
 
-  const token = () => get(LS_TOKEN);
-  const headers = () => {
-    const h = { Accept: 'application/vnd.github+json' };
-    const t = token(); if (t) h.Authorization = 'Bearer ' + t;
-    return h;
-  };
+  function niceErr(e) {
+    const m = (e && (e.message || e.error_description)) || String(e);
+    if (/Invalid login credentials/i.test(m)) return '아이디나 비밀번호가 맞지 않아요';
+    if (/already registered|already exists/i.test(m)) return '이미 있는 아이디예요';
+    if (/Password should be at least/i.test(m)) return '비밀번호는 6자 이상이어야 해요';
+    if (/Email not confirmed/i.test(m)) return '가입 확인이 아직 안 됐어요 (관리 설정 확인 필요)';
+    if (/Failed to fetch|NetworkError/i.test(m)) return '인터넷 연결을 확인해 주세요';
+    return m;
+  }
+
+  async function signUp(id, pw) {
+    const { data, error } = await sb.auth.signUp({ email: idToEmail(id), password: pw, options: { data: { login_id: id } } });
+    if (error) throw new Error(niceErr(error));
+    if (!data.session) {
+      // 메일 확인이 꺼져 있으면 바로 세션이 생긴다. 혹시 없으면 로그인 시도
+      const r = await sb.auth.signInWithPassword({ email: idToEmail(id), password: pw });
+      if (r.error) throw new Error(niceErr(r.error));
+    }
+  }
+  async function signIn(id, pw) {
+    const { error } = await sb.auth.signInWithPassword({ email: idToEmail(id), password: pw });
+    if (error) throw new Error(niceErr(error));
+  }
+  async function signOut() { await sb.auth.signOut(); set(LS_REV, null); }
+  async function user() { const { data } = await sb.auth.getSession(); return data.session ? data.session.user : null; }
+  const userId = u => (u && (u.user_metadata && u.user_metadata.login_id)) || emailToId(u && u.email);
 
   async function pull() {
-    const r = await fetch(API + '?ref=' + CFG.branch + '&t=' + Date.now(), { headers: headers(), cache: 'no-store' });
-    if (r.status === 404) { set(LS_SHA, null); return { data: null, sha: null }; }
-    if (!r.ok) throw new Error('불러오기 실패 (' + r.status + ')');
-    const j = await r.json();
-    set(LS_SHA, j.sha);
-    let data = null;
-    if (j.content) data = JSON.parse(dec(j.content));
-    else if (j.download_url) data = await (await fetch(j.download_url, { cache: 'no-store' })).json();
-    return { data, sha: j.sha };
+    const { data, error } = await sb.from('plan').select('data, rev').eq('id', 1).maybeSingle();
+    if (error) throw new Error(niceErr(error));
+    if (!data) return { data: null, rev: 0 };
+    set(LS_REV, String(data.rev));
+    const d = data.data && data.data.v ? data.data : null;
+    return { data: d, rev: data.rev };
   }
 
-  async function push(data) {
-    if (!token()) throw new Error('NO_TOKEN');
-    const body = { message: '식단 업데이트', content: enc(JSON.stringify(data, null, 1)), branch: CFG.branch };
-    const sha = get(LS_SHA); if (sha) body.sha = sha;
-    const r = await fetch(API, { method: 'PUT', headers: { ...headers(), 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-    if (r.status === 409 || r.status === 422) { const e = new Error('CONFLICT'); e.conflict = true; throw e; }
-    if (r.status === 401 || r.status === 403) throw new Error('토큰이 맞지 않거나 권한이 없어요 (' + r.status + ')');
-    if (!r.ok) throw new Error('저장 실패 (' + r.status + ')');
-    const j = await r.json();
-    set(LS_SHA, j.content && j.content.sha);
+  async function push(doc) {
+    const rev = Number(get(LS_REV) || 0);
+    const { data, error } = await sb.from('plan').update({ data: doc, rev: rev + 1, updated_at: new Date().toISOString() }).eq('id', 1).eq('rev', rev).select('rev');
+    if (error) throw new Error(niceErr(error));
+    if (!data || !data.length) { const e = new Error('CONFLICT'); e.conflict = true; throw e; }
+    set(LS_REV, String(data[0].rev));
   }
 
-  root.Sync = { CFG, pull, push, token, setToken: t => set(LS_TOKEN, t || null), get, set };
+  // 다른 사람이 고치면 바로 알림
+  function subscribe(onChange) {
+    return sb.channel('plan-1')
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'plan', filter: 'id=eq.1' }, p => {
+        if (p.new && String(p.new.rev) !== get(LS_REV)) onChange();
+      })
+      .subscribe();
+  }
+
+  root.Sync = { CFG, sb, signUp, signIn, signOut, user, userId, pull, push, subscribe, onAuth: cb => sb.auth.onAuthStateChange((ev, s) => cb(ev, s)) };
 })(window);

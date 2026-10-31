@@ -21,24 +21,24 @@
   // ---------------- 동기화 ----------------
   let pushTimer = null, syncState = 'idle', syncMsg = '', lastSync = 0;
   function setSync(st, msg) { syncState = st; syncMsg = msg || ''; paintSync(); }
+  let ME = null; // 로그인한 사용자
   function schedulePush() {
-    if (!Y.token()) { setSync('local'); return; }
+    if (!ME) { setSync('local'); return; }
     setSync('saving');
     clearTimeout(pushTimer);
-    pushTimer = setTimeout(doPush, 900);
+    pushTimer = setTimeout(doPush, 700);
   }
-  async function doPush(retry = true) {
+  async function doPush(retry = 2) {
     try { await Y.push(S); lastSync = Date.now(); setSync('saved'); }
     catch (e) {
-      if (e.conflict && retry) {
-        try { const r = await Y.pull(); if (r.data) { S = D.merge(S, r.data); saveLocal(); render(); } return doPush(false); }
+      if (e.conflict && retry > 0) {
+        try { const r = await Y.pull(); if (r.data) { S = D.merge(S, r.data); saveLocal(); render(); } return doPush(retry - 1); }
         catch (e2) { setSync('error', e2.message); }
-      } else if (e.message === 'NO_TOKEN') setSync('local');
-      else setSync('error', e.message);
+      } else setSync('error', e.message);
     }
   }
   async function doPull() {
-    if (syncState === 'saving') return;
+    if (!ME || syncState === 'saving') return;
     try {
       const r = await Y.pull();
       if (r.data) {
@@ -46,12 +46,12 @@
         S = D.merge(S, r.data);
         if (JSON.stringify(S) !== before) { saveLocal(); render(); }
         // 이 기기에만 있던 변경이 있으면 올린다
-        if (Y.token() && canonJSON(S) !== canonJSON(D.merge(r.data, r.data))) schedulePush();
-        else if (Y.token()) setSync('saved');
-      } else if (Y.token() && (S.menus.length || S.fridge.length)) schedulePush();
+        if (canonJSON(S) !== canonJSON(D.merge(r.data, r.data))) schedulePush();
+        else setSync('saved');
+      } else if (S.menus.length || S.fridge.length) schedulePush();
+      else setSync('saved');
       lastSync = Date.now();
-      if (!Y.token()) setSync('local');
-    } catch (e) { if (!Y.token()) setSync('local'); else setSync('error', e.message); }
+    } catch (e) { setSync('error', e.message); }
   }
   function canonJSON(x) {
     const byId = a => (a || []).slice().sort((p, q) => String(p.id).localeCompare(String(q.id)));
@@ -62,7 +62,7 @@
     const el = $('#sync'); if (!el) return;
     const map = {
       idle: ['', ''], saving: ['저장 중…', ''], saved: ['저장됨', 'ok'],
-      local: ['<span class="lg">이 기기에만 저장 중 · </span>연결하기', 'warn'], error: ['<span class="lg">동기화 오류 · </span>확인', 'warn'],
+      local: ['로그인 필요', 'warn'], error: ['<span class="lg">저장 오류 · </span>다시 시도', 'warn'],
     };
     const [t, c] = map[syncState] || map.idle;
     el.innerHTML = t; el.className = 'sync ' + c; el.title = syncMsg;
@@ -339,6 +339,7 @@
       ${r.state === 'short' && r.lines.some(l => l.short > 1e-9 && l.have) ? '<div class="note">냉장고에 있어도 앞선 날짜 메뉴에 먼저 배정된 양은 부족으로 계산돼요.</div>' : ''}
       <div class="mf">
         ${m.done ? `<button class="btn" data-act="undo">완성 취소</button>` : `<button class="btn pri" data-act="done">완성으로 표시</button>`}
+        <button class="btn" data-act="clone">복제하기</button>
         <button class="btn" data-act="edit">수정</button>
         <button class="btn ghost" data-act="del">삭제</button>
       </div>`, 'detail');
@@ -349,6 +350,7 @@
       if (act === 'done') { closeModal(); openComplete(id); }
       else if (act === 'undo') { closeModal(); openUndo(id); }
       else if (act === 'edit') { closeModal(); openEdit({ id }); }
+      else if (act === 'clone') { closeModal(); openClone(id); }
       else if (act === 'del') {
         closeModal();
         const prev = { ...m };
@@ -664,52 +666,87 @@
     });
   }
 
-  // ---------------- 설정 (저장소 연결) ----------------
-  function openSettings() {
-    const has = !!Y.token();
+  // ---------------- 복제 ----------------
+  function openClone(id) {
+    const m = findMenu(id); if (!m) return;
+    const st = { date: D.addDays(m.date, 7) < D.todayIso() ? D.todayIso() : D.addDays(m.date, 7), meal: m.meal };
     const md = openModal(`
-      <div class="mh"><h3>함께 쓰기 연결</h3><button class="x" data-close aria-label="닫기">×</button></div>
-      <p class="desc">두 사람이 같은 식단을 보려면 기기마다 한 번 깃허브 토큰을 넣어 주세요. 식단은 저장소의 <code>data/plan.json</code>에 저장돼요.</p>
-      <div class="cstate ${has ? 'ok' : ''}">${has ? '이 기기는 연결돼 있어요.' : '아직 이 기기에만 저장되고 있어요.'}</div>
-      <form class="tokf"><input class="in" type="password" placeholder="github_pat_… 토큰 붙여넣기" aria-label="깃허브 토큰" ${has ? '' : 'autofocus'}><button class="btn pri">연결</button></form>
-      <div class="mf wrap">
-        ${has ? '<button class="btn" data-act="link">다른 기기 연결 링크 복사</button>' : ''}
-        <button class="btn" data-act="backup">백업 내려받기</button>
-        ${has ? '<button class="btn ghost" data-act="off">이 기기 연결 끊기</button>' : ''}
+      <div class="mh"><div><div class="sub">복제하기</div><h3>${esc(m.name)}</h3></div><button class="x" data-close aria-label="닫기">×</button></div>
+      <p class="desc">같은 메뉴와 재료(${(m.ings || []).length}개)를 원하는 날짜·끼니에 하나 더 만들어요. 복제한 메뉴는 '안 만든 상태'로 들어가요.</p>
+      <div class="ef">
+        <div class="row2">
+          <div class="fld"><span class="lb">날짜</span><div class="calw"><button type="button" class="in datebtn"><span></span>${ICON.cal}</button></div></div>
+          <div class="fld"><span class="lb">끼니</span><div class="seg">${D.MEALS.map(x => `<button type="button" data-meal="${x}">${x}</button>`).join('')}</div></div>
+        </div>
       </div>
-      <details class="how"><summary>토큰 만드는 법</summary>
-        <ol><li>github.com → 프로필 → Settings → Developer settings → Personal access tokens → <b>Fine-grained tokens</b> → Generate new token</li>
-        <li>Repository access: <b>Only select repositories</b> → <b>${esc(Y.CFG.repo)}</b></li>
-        <li>Permissions → Repository permissions → <b>Contents: Read and write</b></li>
-        <li>만들어진 토큰을 복사해 위 칸에 붙여넣기</li></ol></details>`, 'settings');
+      <div class="mf"><button class="btn pri" data-act="go">복제</button><button class="btn ghost" data-close>취소</button></div>`, 'edit clone');
+    const dateBtn = $('.datebtn', md);
+    const paintDate = () => { $('span', dateBtn).textContent = dateLabel(st.date); };
+    const paintMeal = () => $$('.seg button', md).forEach(b => b.classList.toggle('on', b.dataset.meal === st.meal));
+    paintDate(); paintMeal();
+    attachCal(dateBtn, () => st.date, d => { st.date = d; paintDate(); });
+    md.addEventListener('click', e => {
+      const mb = e.target.closest('[data-meal]'); if (mb) { st.meal = mb.dataset.meal; paintMeal(); return; }
+      if (e.target.closest('[data-close]')) return closeModal();
+      if (!e.target.closest('[data-act=go]')) return;
+      const t = D.now();
+      const c = { id: D.uid(), name: m.name, date: st.date, meal: st.meal, ings: (m.ings || []).map(g => ({ ...g })), done: false, createdAt: t, updatedAt: t };
+      S.menus.push(c);
+      closeModal(); commit();
+      toast(`${D.md(st.date)} ${st.meal}에 복제했어요`, () => { Object.assign(c, { deleted: true, updatedAt: D.now() }); commit(); });
+    });
+  }
+
+  // ---------------- 계정 ----------------
+  function openAccount() {
+    const md = openModal(`
+      <div class="mh"><h3>계정</h3><button class="x" data-close aria-label="닫기">×</button></div>
+      <p class="desc"><b>${esc(Y.userId(ME))}</b>로 로그인돼 있어요. 가입한 사람은 모두 같은 식단표를 함께 봐요.</p>
+      <div class="mf wrap">
+        <button class="btn" data-act="backup">백업 내려받기</button>
+        <button class="btn ghost" data-act="out">로그아웃</button>
+      </div>`, 'small');
     md.addEventListener('click', async e => {
       if (e.target.closest('[data-close]')) return closeModal();
       const a = e.target.closest('[data-act]'); if (!a) return;
-      if (a.dataset.act === 'off') { Y.setToken(null); closeModal(); setSync('local'); toast('이 기기 연결을 끊었어요'); }
-      if (a.dataset.act === 'link') {
-        const url = location.origin + location.pathname + '#key=' + encodeURIComponent(Y.token());
-        try { await navigator.clipboard.writeText(url); toast('링크를 복사했어요. 다른 기기에서 한 번 열면 연결돼요'); }
-        catch (err) { prompt('이 링크를 다른 기기에서 열어 주세요', url); }
-      }
+      if (a.dataset.act === 'out') { closeAll(); await Y.signOut(); }
       if (a.dataset.act === 'backup') {
         const blob = new Blob([JSON.stringify(S, null, 1)], { type: 'application/json' });
         const u = URL.createObjectURL(blob), l = document.createElement('a');
         l.href = u; l.download = `이유식식단_${D.todayIso()}.json`; l.click(); setTimeout(() => URL.revokeObjectURL(u), 1000);
       }
     });
-    $('.tokf', md).addEventListener('submit', async e => {
+  }
+
+  // ---------------- 로그인 · 가입 ----------------
+  function showAuth(on) {
+    const el = $('#auth');
+    el.hidden = !on;
+    document.body.classList.toggle('locked', on);
+    if (on) setTimeout(() => $('#aid').focus(), 50);
+  }
+  function wireAuth() {
+    let mode = 'in';
+    const f = $('#authf'), msg = $('#amsg');
+    const paint = () => {
+      $$('#auth [data-amode]').forEach(b => b.classList.toggle('on', b.dataset.amode === mode));
+      $('#apw2w').hidden = mode !== 'up';
+      $('#asub').textContent = mode === 'up' ? '가입하기' : '로그인';
+      $('#apw').autocomplete = mode === 'up' ? 'new-password' : 'current-password';
+      msg.textContent = '';
+    };
+    $$('#auth [data-amode]').forEach(b => b.onclick = () => { mode = b.dataset.amode; paint(); });
+    paint();
+    f.addEventListener('submit', async e => {
       e.preventDefault();
-      const v = $('input', e.target).value.trim(); if (!v) return;
-      Y.setToken(v);
-      const cs = $('.cstate', md); cs.textContent = '확인 중…'; cs.className = 'cstate';
-      try {
-        const r = await fetch(`https://api.github.com/repos/${Y.CFG.owner}/${Y.CFG.repo}`, { headers: { Authorization: 'Bearer ' + v, Accept: 'application/vnd.github+json' } });
-        const j = await r.json();
-        if (!r.ok || !(j.permissions && j.permissions.push)) throw new Error(r.ok ? '쓰기 권한이 없는 토큰이에요' : '토큰이 맞지 않아요');
-        cs.textContent = '연결됐어요. 식단을 맞추는 중…'; cs.className = 'cstate ok';
-        await doPull(); schedulePush();
-        setTimeout(closeModal, 700);
-      } catch (err) { Y.setToken(null); cs.textContent = err.message; cs.className = 'cstate err'; }
+      const id = $('#aid').value.trim(), pw = $('#apw').value, pw2 = $('#apw2').value;
+      if (!/^[a-zA-Z0-9_.-]{3,20}$/.test(id)) { msg.textContent = '아이디는 영문·숫자 3~20자로 적어 주세요'; return; }
+      if (pw.length < 6) { msg.textContent = '비밀번호는 6자 이상이어야 해요'; return; }
+      if (mode === 'up' && pw !== pw2) { msg.textContent = '비밀번호가 서로 달라요'; return; }
+      const btn = $('#asub'); btn.disabled = true; msg.textContent = mode === 'up' ? '가입 중…' : '로그인 중…';
+      try { mode === 'up' ? await Y.signUp(id, pw) : await Y.signIn(id, pw); f.reset(); }
+      catch (err) { msg.textContent = err.message; }
+      finally { btn.disabled = false; }
     });
   }
 
@@ -726,21 +763,35 @@
     $('#nextW').onclick = () => { U.weekStart = D.addDays(U.weekStart, 7); renderPlan(); };
     $('#todayW').onclick = () => { U.weekStart = thisMon(); U.selDay = D.todayIso(); renderPlan(); };
     $('#addBtn').onclick = () => openEdit({ date: U.mtab === 'plan' && window.innerWidth <= 760 ? U.selDay : D.todayIso() });
-    $('#setBtn').onclick = openSettings;
-    $('#sync').onclick = () => { if (syncState === 'local' || syncState === 'error') openSettings(); };
+    $('#setBtn').onclick = () => ME ? openAccount() : showAuth(true);
+    $('#sync').onclick = () => { if (syncState === 'error') doPush(); else if (!ME) showAuth(true); };
     $$('.mtabs [data-mtab]').forEach(b => b.onclick = () => { U.mtab = b.dataset.mtab; $$('.mtabs [data-mtab]').forEach(x => x.classList.toggle('on', x === b)); render(); });
     wireFridge();
     window.addEventListener('focus', () => { if (Date.now() - lastSync > 10000) doPull(); });
-    setInterval(() => { if (document.visibilityState === 'visible' && Y.token() && !stack.length) doPull(); }, 30000);
+    setInterval(() => { if (document.visibilityState === 'visible' && ME && !stack.length) doPull(); }, 30000);
   }
 
-  // 다른 기기 연결 링크(#key=…) 처리
-  (function takeKey() {
-    const m = location.hash.match(/key=([^&]+)/);
-    if (m) { Y.setToken(decodeURIComponent(m[1])); history.replaceState(null, '', location.pathname + location.search); }
-  })();
+  // ---------------- 시작 ----------------
+  let channel = null;
+  async function onUser(u) {
+    const was = ME && ME.id;
+    ME = u;
+    const av = $('#setBtn');
+    if (u) {
+      av.textContent = Y.userId(u).slice(0, 1).toUpperCase(); av.title = Y.userId(u) + ' · 계정';
+      showAuth(false);
+      if (was !== u.id) { await doPull(); if (!channel) channel = Y.subscribe(() => doPull()); }
+    } else {
+      av.textContent = ''; av.title = '로그인';
+      if (channel) { Y.sb.removeChannel(channel); channel = null; }
+      setSync('local');
+      showAuth(true);
+    }
+  }
 
   wire();
+  wireAuth();
   render();
-  doPull();
+  Y.user().then(onUser);
+  Y.onAuth((ev, session) => { if (ev === 'SIGNED_IN' || ev === 'SIGNED_OUT' || ev === 'INITIAL_SESSION') onUser(session ? session.user : null); });
 })();

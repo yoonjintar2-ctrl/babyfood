@@ -263,3 +263,22 @@ code{background:#f0f1f4;border-radius:4px;padding:1px 5px;font-size:12px}
   .ir{grid-template-columns:minmax(0,1fr) 62px 62px 30px}
   .toast{bottom:20px}
 }
+
+/* ---------- 계정 · 로그인 ---------- */
+.avatar{width:32px;height:32px;border-radius:50%;border:none;background:#e9ebef;color:var(--sub);font-size:13px;font-weight:700;display:inline-flex;align-items:center;justify-content:center}
+.avatar:empty::before{content:'';width:12px;height:12px;border-radius:50%;border:1.8px solid var(--sub);box-sizing:border-box}
+.auth{position:fixed;inset:0;z-index:100;background:var(--bg);display:flex;align-items:center;justify-content:center;padding:20px}
+.auth[hidden]{display:none}
+body.locked{overflow:hidden}
+.abox{width:100%;max-width:360px;background:#fff;border:1px solid var(--line);border-radius:16px;padding:28px 26px 22px;box-shadow:0 10px 30px rgba(20,24,30,.06)}
+.abrand{font-size:20px;font-weight:700;letter-spacing:-.02em;text-align:center;margin-bottom:18px}
+.atabs{display:flex;background:#f0f1f4;border-radius:10px;padding:3px;margin-bottom:6px}
+.atabs button{flex:1;height:34px;border:none;border-radius:8px;background:transparent;color:var(--sub);font-size:14px}
+.atabs button.on{background:#fff;color:var(--text);font-weight:700;box-shadow:0 1px 2px rgba(0,0,0,.08)}
+#authf .lb{display:block;font-size:12px;font-weight:700;color:var(--sub);margin:14px 0 6px}
+#authf .in{height:44px;font-size:15px}
+#apw2w[hidden]{display:none}
+.amsg{min-height:18px;font-size:12.5px;color:var(--blue);margin:10px 0 6px}
+#asub{width:100%}
+.anote{font-size:12px;color:var(--muted);text-align:center;margin:14px 0 0}
+.modal.clone{overflow:visible}
