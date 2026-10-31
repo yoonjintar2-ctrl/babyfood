@@ -634,12 +634,82 @@
         out.push({ name: n, qty: q, unit: $('.iunit', row).value });
       }
       const serves = Math.max(1, Math.round(num($('#mserves', md).value)) || 1);
+      const prevIngs = m ? (m.ings || []).map(g => ({ ...g })) : [];
+      let saved = m;
       if (m) Object.assign(m, { name, date: st.date, meal: st.meal, ings: out, serves, updatedAt: D.now() });
-      else S.menus.push({ id: D.uid(), name, date: st.date, meal: st.meal, ings: out, serves, done: false, createdAt: D.now(), updatedAt: D.now() });
+      else { saved = { id: D.uid(), name, date: st.date, meal: st.meal, ings: out, serves, done: false, createdAt: D.now(), updatedAt: D.now() }; S.menus.push(saved); }
       closeModal(); commit();
       toast(m ? '수정했어요' : `${D.md(st.date)} ${st.meal}에 추가했어요`);
-      if (!m && e.submitter && e.submitter.dataset.more) openEdit({ date: st.date, meal: st.meal });
+      const more = !m && e.submitter && e.submitter.dataset.more;
+      const asked = askUnitSync(saved, prevIngs, () => { if (more) openEdit({ date: st.date, meal: st.meal }); });
+      if (!asked && more) openEdit({ date: st.date, meal: st.meal });
     });
+  }
+
+  // ---------------- 같은 메뉴 단위 맞추기 ----------------
+  // 저장한 메뉴의 재료 단위가 같은 이름의 다른 메뉴들과 다르면 맞출지 묻는다
+  function askUnitSync(saved, prevIngs, after) {
+    const others = D.alive(S.menus).filter(x => x.id !== saved.id && M.norm(x.name) === M.norm(saved.name));
+    if (!others.length) return false;
+    const groups = [];
+    for (const g of saved.ings || []) {
+      const c = M.canon(g.name);
+      const rows = [];
+      for (const o of D.sortMenus(others)) (o.ings || []).forEach((og, i) => { if (M.canon(og.name) === c && og.unit !== g.unit) rows.push({ o, i, qty: num(og.qty) || 0, unit: og.unit }); });
+      if (!rows.length) continue;
+      // 같은 기존 값끼리 묶어서 한 번만 입력
+      const byVal = new Map();
+      for (const r of rows) { const k = r.qty + '|' + r.unit; (byVal.get(k) || byVal.set(k, { qty: r.qty, unit: r.unit, rows: [] }).get(k)).rows.push(r); }
+      // 이번 메뉴에서 단위를 바꾼 거라면 비율을 알 수 있다 (예: 60g → 1개)
+      const prev = prevIngs.find(p => M.canon(p.name) === c && p.unit !== g.unit);
+      const ratio = prev && num(prev.qty) > 0 ? { unit: prev.unit, r: (num(g.qty) || 0) / num(prev.qty) } : null;
+      groups.push({ g, vals: [...byVal.values()], ratio });
+    }
+    if (!groups.length) return false;
+    const r2 = v => Math.round(v * 100) / 100;
+    const md = openModal(`
+      <div class="mh"><div><div class="sub">${esc(saved.name)}</div><h3>같은 메뉴들도 단위를 바꿀까요?</h3></div><button class="x" data-close aria-label="닫기">×</button></div>
+      <p class="desc">이 메뉴의 다른 날짜 ${others.length}곳에는 단위가 다르게 들어가 있어요. 바꾸면 기존 양을 새 단위로 어떻게 적을지만 정해 주세요.</p>
+      ${groups.map((gr, gi) => `<div class="us">
+        <div class="ush"><b>${esc(gr.g.name)}</b> → 이번에 <b>${D.fmtQ(num(gr.g.qty) || 0)}${esc(gr.g.unit)}</b>(으)로 입력</div>
+        ${gr.vals.map((v, vi) => {
+          const guess = gr.ratio && gr.ratio.unit === v.unit ? r2(v.qty * gr.ratio.r) : '';
+          return `<div class="usr"><span class="old">${D.fmtQ(v.qty)}${esc(v.unit)}${v.rows.length > 1 ? ` <small>${v.rows.length}곳</small>` : ` <small>${D.md(v.rows[0].o.date)} ${esc(v.rows[0].o.meal)}</small>`}</span><span class="arr">→</span>
+            <input class="in" inputmode="decimal" data-g="${gi}" data-v="${vi}" value="${guess}" placeholder="?" aria-label="${esc(gr.g.name)} ${D.fmtQ(v.qty)}${esc(v.unit)}를 ${esc(gr.g.unit)}로"><span class="nu">${esc(gr.g.unit)}</span></div>`;
+        }).join('')}</div>`).join('')}
+      <div class="note">한 칸을 채우면 단위가 같은 다른 칸도 같은 비율로 채워져요.</div>
+      <div class="mf"><button class="btn pri" data-act="apply">바꾸기</button><button class="btn ghost" data-close>이번 메뉴만</button></div>`, 'small unitsync');
+    const inputs = $$('input[data-g]', md);
+    inputs.forEach(inp => inp.addEventListener('input', () => {
+      inp.dataset.touched = '1';
+      const gr = groups[+inp.dataset.g], v = gr.vals[+inp.dataset.v], val = num(inp.value);
+      if (!(val > 0) || !(v.qty > 0)) return;
+      const r = val / v.qty;
+      inputs.filter(o => o !== inp && o.dataset.g === inp.dataset.g && !o.dataset.touched).forEach(o => {
+        const ov = gr.vals[+o.dataset.v]; if (ov.unit === v.unit) o.value = r2(ov.qty * r);
+      });
+    }));
+    const done = () => { closeModal(); after && after(); };
+    md.addEventListener('click', e => {
+      if (e.target.closest('[data-close]')) return done();
+      if (!e.target.closest('[data-act=apply]')) return;
+      const empty = inputs.find(i => !(num(i.value) > 0));
+      if (empty) { empty.focus(); toast('새 단위로 얼마인지 적어 주세요'); return; }
+      const t = D.now(), snap = [];
+      inputs.forEach(inp => {
+        const gr = groups[+inp.dataset.g], v = gr.vals[+inp.dataset.v], q = num(inp.value);
+        v.rows.forEach(r => {
+          snap.push([r.o, r.o.ings.map(x => ({ ...x }))]);
+          r.o.ings[r.i] = { ...r.o.ings[r.i], qty: q, unit: gr.g.unit };
+          r.o.updatedAt = t;
+        });
+      });
+      const n = new Set(snap.map(x => x[0])).size;
+      commit();
+      toast(`같은 메뉴 ${n}곳의 단위를 맞췄어요`, () => { const u = D.now(); snap.reverse().forEach(([o, ings]) => { o.ings = ings; o.updatedAt = u; }); commit(); });
+      done();
+    });
+    return true;
   }
 
   // ---------------- 냉장고 ----------------
