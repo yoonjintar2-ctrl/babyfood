@@ -23,6 +23,10 @@
 가입한 사람 모두가 같은 식단표를 봅니다. 다른 사람이 고치면 바로 반영돼요.
 테이블 구조는 `supabase/schema.sql`, 사진 저장 공간은 `supabase/storage.sql`.
 
+**수파베이스 관리 계정:** 대시보드는 **GitHub `yoonjintar4-eng` 계정으로 "Continue with GitHub"** 로그인 →
+조직 '우리집 가계부' → 프로젝트 `babyfood` (ref `eubwzdonqosisrcovvou`, 싱가포르).
+(yoonjintar2-ctrl GitHub나 ChatGPT/yoonjintar0 로그인은 다른 계정이라 이 프로젝트가 안 보임)
+
 ## 파일
 - `index.html`, `style.css`
 - `js/match.js` 재료 이름 매칭 · `js/data.js` 판정 로직 · `js/sync.js` 수파베이스 로그인·저장 · `js/app.js` 화면
