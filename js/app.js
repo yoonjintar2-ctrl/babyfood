@@ -195,8 +195,96 @@
   const legendHtml = () => `<div class="legend"><span class="lgt">표시 안내</span>${pill('short')}${pill('ready')}${pill('done')}
     <label class="tg"><input type="checkbox" data-toggle-short ${U.hideShort ? '' : 'checked'}>부족한 재료 보기</label></div>`;
 
+  // ---------------- 냉장고 ↔ 메뉴 단위 불일치 ----------------
+  // 같은 재료인데 냉장고 단위와 메뉴 단위가 달라 재고로 못 잡는 것
+  function unitMismatches() {
+    const fr = new Map();
+    for (const f of D.alive(S.fridge)) { if (!(f.qty > 0)) continue; const k = M.canon(f.name); (fr.get(k) || fr.set(k, []).get(k)).push(f); }
+    const out = [];
+    for (const [k, fs] of fr) {
+      const fUnits = new Set(fs.map(f => D.toBase(1, f.unit)[1]));
+      const rows = [];
+      for (const m of D.alive(S.menus)) {
+        if (m.done) continue;
+        (m.ings || []).forEach((g, i) => { if (M.canon(g.name) === k && !fUnits.has(D.toBase(1, g.unit)[1])) rows.push({ m, i, qty: num(g.qty) || 0, unit: g.unit }); });
+      }
+      if (rows.length) out.push({ key: k, name: fs[0].name, fridge: fs, rows });
+    }
+    return out;
+  }
+  function mismatchBanner() {
+    const mm = unitMismatches();
+    if (!mm.length) return '';
+    return `<div class="umb" role="alert"><span><b>단위가 달라 냉장고 재료로 못 잡는 재료</b> · ${mm.map(x => `${esc(x.name)} <small>(냉장고 ${esc(x.fridge.map(f => f.unit).join('/'))} · 메뉴 ${esc([...new Set(x.rows.map(r => r.unit))].join('/'))})</small>`).join(', ')}</span><button class="btn sm" data-fixunit>단위 맞추기</button></div>`;
+  }
+  // 수량 qty(from 단위)를 to 단위로 환산 (모르면 '')
+  function convQty(name, qty, from, to) {
+    const a = D.toBase(qty, from), b = D.toBase(1, to);
+    if (a[1] === b[1]) return Math.round(a[0] / b[0] * 100) / 100;
+    const g = window.Nutri.gramsOf(name, qty, from), per = window.Nutri.gramsOf(name, 1, to);
+    return g != null && per ? Math.round(g / per * 100) / 100 : '';
+  }
+  function openUnitFix(list, after) {
+    list = list || unitMismatches();
+    if (!list.length) { after && after(); return; }
+    const x = list[0], rest = list.slice(1);
+    const fUnit = x.fridge[0].unit, mUnits = [...new Set(x.rows.map(r => r.unit))];
+    const mUnit = mUnits[0];
+    const byVal = new Map();
+    for (const r of x.rows) { const k = r.qty + '|' + r.unit; (byVal.get(k) || byVal.set(k, { qty: r.qty, unit: r.unit, rows: [] }).get(k)).rows.push(r); }
+    const vals = [...byVal.values()];
+    const menuN = new Set(x.rows.map(r => r.m.id)).size;
+    let mode = 'menu';
+    const md = openModal(`
+      <div class="mh"><div><div class="sub">단위 맞추기${list.length > 1 ? ` · ${list.length}개 중 1` : ''}</div><h3>${esc(x.name)} 단위가 서로 달라요</h3></div><button class="x" data-close aria-label="닫기">×</button></div>
+      <p class="desc">냉장고에는 <b>${x.fridge.map(f => D.fmtQ(f.qty) + esc(f.unit)).join(', ')}</b>, 메뉴 ${menuN}곳에는 <b>${esc(mUnits.join('/'))}</b>로 들어가 있어서 있는 재료를 못 찾고 있어요. 어느 쪽에 맞출까요?</p>
+      <div class="seg uf"><button type="button" data-mode="menu" class="on">메뉴를 '${esc(fUnit)}'로</button><button type="button" data-mode="fridge">냉장고를 '${esc(mUnit)}'로</button></div>
+      <div class="ufb" data-for="menu">
+        ${vals.map((v, i) => `<div class="usr"><span class="old">${D.fmtQ(v.qty)}${esc(v.unit)} <small>${v.rows.length}곳</small></span><span class="arr">→</span><input class="in" inputmode="decimal" data-v="${i}" value="${convQty(x.name, v.qty, v.unit, fUnit)}" placeholder="?"><span class="nu">${esc(fUnit)}</span></div>`).join('')}
+      </div>
+      <div class="ufb" data-for="fridge" hidden>
+        ${x.fridge.map((f, i) => `<div class="usr"><span class="old">냉장고 ${D.fmtQ(f.qty)}${esc(f.unit)}</span><span class="arr">→</span><input class="in" inputmode="decimal" data-f="${i}" value="${convQty(x.name, f.qty, f.unit, mUnit)}" placeholder="?"><span class="nu">${esc(mUnit)}</span></div>`).join('')}
+        ${mUnits.length > 1 ? `<div class="note">메뉴에는 ${esc(mUnits.join(', '))}가 섞여 있어요. 냉장고를 '${esc(mUnit)}'로 바꾸면 나머지는 다음에 다시 물어봐요.</div>` : ''}
+      </div>
+      <div class="note">값은 대략적인 무게로 미리 계산해 뒀어요(예: 사과 1개 ≈ 250g). 맞지 않으면 고쳐 주세요.</div>
+      <div class="mf"><button class="btn pri" data-act="apply">맞추기</button><button class="btn ghost" data-close>나중에</button></div>`, 'small unitsync');
+    const paint = () => { $$('.uf button', md).forEach(b => b.classList.toggle('on', b.dataset.mode === mode)); $$('.ufb', md).forEach(b => { b.hidden = b.dataset.for !== mode; }); };
+    md.addEventListener('click', e => {
+      const sb = e.target.closest('[data-mode]'); if (sb) { mode = sb.dataset.mode; paint(); return; }
+      if (e.target.closest('[data-close]')) { closeModal(); after && after(); return; }
+      if (!e.target.closest('[data-act=apply]')) return;
+      const inputs = $$(`.ufb[data-for=${mode}] input`, md);
+      const empty = inputs.find(i => !(num(i.value) > 0));
+      if (empty) { empty.focus(); toast('바꿀 양을 적어 주세요'); return; }
+      const t = D.now(), undo = [];
+      if (mode === 'menu') {
+        inputs.forEach(inp => {
+          const v = vals[+inp.dataset.v], q = num(inp.value);
+          v.rows.forEach(r => { undo.push([r.m, 'ings', r.m.ings.map(g => ({ ...g }))]); r.m.ings[r.i] = { ...r.m.ings[r.i], qty: q, unit: fUnit }; r.m.updatedAt = t; });
+        });
+      } else {
+        inputs.forEach(inp => { const f = x.fridge[+inp.dataset.f]; undo.push([f, 'qu', { qty: f.qty, unit: f.unit }]); Object.assign(f, { qty: num(inp.value), unit: mUnit, updatedAt: t }); });
+      }
+      closeModal(); commit();
+      toast(mode === 'menu' ? `메뉴 ${menuN}곳의 ${x.name} 단위를 '${fUnit}'로 맞췄어요` : `냉장고 ${x.name}을(를) '${mUnit}'로 바꿨어요`, () => {
+        const u = D.now();
+        undo.reverse().forEach(([o, kind, v]) => { if (kind === 'ings') o.ings = v; else Object.assign(o, v); o.updatedAt = u; });
+        commit();
+      });
+      const left = unitMismatches().filter(y => rest.some(r => r.key === y.key));
+      if (left.length) openUnitFix(left, after); else after && after();
+    });
+  }
+  // 저장 직후 새로 생긴 불일치면 바로 알림
+  function checkUnitFor(names, after) {
+    const ks = new Set(names.map(n => M.canon(n)));
+    const mm = unitMismatches().filter(x => ks.has(x.key));
+    if (mm.length) { openUnitFix(mm, after); return true; }
+    return false;
+  }
+
   function renderPlan() {
-    $('#plan').innerHTML = `<div class="desk">${legendHtml()}${[0, 7, 14].map(n => sectionHtml(D.addDays(U.weekStart, n), n > 0)).join('')}</div>${mobileHtml()}`;
+    $('#plan').innerHTML = `${mismatchBanner()}<div class="desk">${legendHtml()}${[0, 7, 14].map(n => sectionHtml(D.addDays(U.weekStart, n), n > 0)).join('')}</div>${mobileHtml()}`;
   }
 
   // 만들 요리: 이번 주 월요일 이후 안 만든 메뉴를 이름별로 묶어 가장 이른 날짜 순
@@ -681,8 +769,10 @@
       closeModal(); commit();
       toast(m ? '수정했어요' : `${D.md(st.date)} ${st.meal}에 추가했어요`);
       const more = !m && e.submitter && e.submitter.dataset.more;
-      const asked = askUnitSync(saved, prevIngs, () => { if (more) openEdit({ date: st.date, meal: st.meal }); });
-      if (!asked && more) openEdit({ date: st.date, meal: st.meal });
+      const next = () => { if (more) openEdit({ date: st.date, meal: st.meal }); };
+      const afterSync = () => { if (!checkUnitFor(out.map(g => g.name), next)) next(); };
+      const asked = askUnitSync(saved, prevIngs, afterSync);
+      if (!asked) afterSync();
     });
   }
 
@@ -775,6 +865,7 @@
       nameI.value = ''; qtyI.value = ''; nameI.dataset.ok = '';
       commit(); nameI.focus();
       toast(`${n} ${D.fmtQ(q)}${unitS.value} 담았어요`);
+      checkUnitFor([n]);
     });
     const stepOf = u => ({ g: 10, ml: 10, kg: 0.1, L: 0.1 }[u] || 0.5);
     $('#fridgeList').addEventListener('click', e => {
@@ -1013,6 +1104,7 @@
   // ---------------- 이벤트 ----------------
   function wire() {
     $('#plan').addEventListener('click', e => {
+      if (e.target.closest('[data-fixunit]')) return openUnitFix();
       if (U.paste) {
         const sl = e.target.closest('[data-slot]');
         if (sl) { e.preventDefault(); return pasteTo(sl.dataset.slot); }

@@ -65,7 +65,14 @@
     return { ...t, counted: n, missing: [...missing] };
   }
 
-  const api = { of, day, REF, rowOf };
+  // 단위 환산용: 재료 qty unit → g (모르면 null)
+  function gramsOf(name, qty, unit) {
+    if (unit === 'g' || unit === 'ml') return qty;
+    if (unit === 'kg' || unit === 'L') return qty * 1000;
+    const r = rowOf(name); if (!r) return null;
+    return grams(r, qty, unit);
+  }
+  const api = { of, day, REF, rowOf, gramsOf };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.Nutri = api;
 })(typeof window !== 'undefined' ? window : globalThis);
