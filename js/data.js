@@ -87,7 +87,9 @@
   }
 
   const mealIdx = m => Math.max(0, MEALS.indexOf(m));
-  const sortMenus = arr => arr.slice().sort((a, b) => a.date.localeCompare(b.date) || mealIdx(a.meal) - mealIdx(b.meal) || (a.createdAt || 0) - (b.createdAt || 0));
+  // 같은 끼니 안 순서: 사용자가 정한 ord 먼저, 없으면 만든 순서
+  const ordKey = x => (x.ord != null ? x.ord : 1e15 + (x.createdAt || 0));
+  const sortMenus = arr => arr.slice().sort((a, b) => a.date.localeCompare(b.date) || mealIdx(a.meal) - mealIdx(b.meal) || ordKey(a) - ordKey(b));
 
   /**
    * 판정: 이번 주 월요일 이후의 안 만든 메뉴에 날짜 순서대로 냉장고 재료를 배정.

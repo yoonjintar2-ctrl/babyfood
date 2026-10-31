@@ -330,3 +330,11 @@ body.pasting .mslot:active::after,body.pasting [data-slot]:active::after{content
 body.dragging .c[data-slot]{position:relative}
 body.dragging .c[data-slot].dropok::after{content:'';position:absolute;inset:0;background:rgba(37,99,235,.18);box-shadow:inset 0 0 0 2px rgba(37,99,235,.55);pointer-events:none}
 body.dragging .add-sm{visibility:hidden}
+
+/* 순서 바꾸기 표시선 */
+.mi.ins-before{box-shadow:inset 0 3px 0 var(--blue)}
+.mi.ins-after{box-shadow:inset 0 -3px 0 var(--blue)}
+.ordbtns{display:inline-flex;gap:4px}
+.ordbtns .btn{padding:0 10px}
+.ordbtns .btn:disabled{opacity:.35;cursor:default}
+.mf{flex-wrap:wrap}

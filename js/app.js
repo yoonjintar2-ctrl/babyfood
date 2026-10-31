@@ -368,6 +368,7 @@
         ${m.done ? `<button class="btn" data-act="undo">완성 취소</button>` : `<button class="btn pri" data-act="done">완성으로 표시</button>`}
         <button class="btn" data-act="clone">복제하기</button>
         <button class="btn" data-act="move">옮기기</button>
+        ${(() => { const sib = menusAt(m.date, m.meal); const i = sib.indexOf(m); return sib.length > 1 ? `<span class="ordbtns"><button class="btn" data-act="up" ${i === 0 ? 'disabled' : ''} aria-label="같은 끼니에서 위로">↑</button><button class="btn" data-act="down" ${i === sib.length - 1 ? 'disabled' : ''} aria-label="같은 끼니에서 아래로">↓</button></span>` : ''; })()}
         <button class="btn" data-act="edit">수정</button>
         <button class="btn ghost" data-act="del">삭제</button>
       </div>`, 'detail');
@@ -380,6 +381,10 @@
       else if (act === 'edit') { closeModal(); openEdit({ id }); }
       else if (act === 'clone') { closeModal(); startPaste(id); }
       else if (act === 'move') { closeModal(); startPaste(id, 'move'); }
+      else if (act === 'up' || act === 'down') {
+        const i = menusAt(m.date, m.meal).indexOf(m);
+        closeModal(); placeMenu(m, m.date, m.meal, i + (act === 'up' ? -1 : 1));
+      }
       else if (act === 'del') {
         closeModal();
         const prev = { ...m };
@@ -748,20 +753,34 @@
     $('#pasteBar').hidden = true;
     if (n) toast(`${n}칸에 붙여넣었어요`);
   }
-  function moveMenu(m, date, meal, copy) {
-    if (m.date === date && m.meal === meal && !copy) return;
+  // 메뉴를 (date, meal) 칸의 idx 번째에 놓기 — 옮기기 · 복사 · 순서 바꾸기 공용
+  function placeMenu(m, date, meal, idx, copy) {
+    const others = menusAt(date, meal).filter(x => x.id !== m.id);
+    const at = Math.max(0, Math.min(idx == null ? others.length : idx, others.length));
+    const sameSlot = m.date === date && m.meal === meal;
+    if (sameSlot && !copy && menusAt(date, meal).indexOf(m) === at) return;
+    const touched = [...new Set([...others, ...menusAt(m.date, m.meal), m])];
+    const snap = touched.map(x => [x, { date: x.date, meal: x.meal, ord: x.ord }]);
+    let target = m, made = null;
     if (copy) {
       const t = D.now();
-      const c = { id: D.uid(), name: m.name, date, meal, ings: (m.ings || []).map(g => ({ ...g })), serves: m.serves || 1, done: false, createdAt: t, updatedAt: t };
-      S.menus.push(c); commit();
-      toast(`${D.md(date)} ${meal}에 복사했어요`, () => { Object.assign(c, { deleted: true, updatedAt: D.now() }); commit(); });
-      return;
+      made = target = { id: D.uid(), name: m.name, date, meal, ings: (m.ings || []).map(g => ({ ...g })), serves: m.serves || 1, done: false, createdAt: t, updatedAt: t };
+      S.menus.push(made);
     }
-    const prev = { date: m.date, meal: m.meal };
-    Object.assign(m, { date, meal, updatedAt: D.now() });
+    const list = others.slice(); list.splice(at, 0, target);
+    const t = D.now();
+    if (!copy) Object.assign(m, { date, meal });
+    list.forEach((x, i) => { if (x.ord !== i || x === target) { x.ord = i; x.updatedAt = t; } });
     commit();
-    toast(`${D.md(date)} (${D.dow(date)}) ${meal}로 옮겼어요`, () => { Object.assign(m, prev, { updatedAt: D.now() }); commit(); });
+    const msg = copy ? `${D.md(date)} ${meal}에 복사했어요` : sameSlot ? '순서를 바꿨어요' : `${D.md(date)} (${D.dow(date)}) ${meal}로 옮겼어요`;
+    toast(msg, () => {
+      const u = D.now();
+      snap.forEach(([x, v]) => { Object.assign(x, v, { updatedAt: u }); if (v.ord == null) delete x.ord; });
+      if (made) Object.assign(made, { deleted: true, updatedAt: u });
+      commit();
+    });
   }
+  function moveMenu(m, date, meal, copy) { placeMenu(m, date, meal, null, copy); }
   function pasteTo(slot) {
     const m = findMenu(U.paste.id); if (!m) return endPaste();
     const [date, meal] = slot.split('|');
@@ -857,27 +876,36 @@
     });
     plan.addEventListener('dragend', () => {
       dragId = null; document.body.classList.remove('dragging');
-      $$('.drag-src, .dropok', plan).forEach(x => x.classList.remove('drag-src', 'dropok'));
+      $$('.drag-src, .dropok, .ins-before, .ins-after', plan).forEach(x => x.classList.remove('drag-src', 'dropok', 'ins-before', 'ins-after'));
     });
+    const clearIns = () => $$('.ins-before, .ins-after', plan).forEach(x => x.classList.remove('ins-before', 'ins-after'));
+    let dropIdx = null;
     plan.addEventListener('dragover', e => {
       if (!dragId) return;
       const sl = e.target.closest('[data-slot]'); if (!sl) return;
       e.preventDefault();
       e.dataTransfer.dropEffect = (e.altKey || e.ctrlKey || e.metaKey) ? 'copy' : 'move';
       if (!sl.classList.contains('dropok')) { $$('.dropok', plan).forEach(x => x.classList.remove('dropok')); sl.classList.add('dropok'); }
+      // 놓일 위치: 마우스 높이보다 위에 있는 메뉴 수
+      const items = $$('.mi', sl).filter(x => x.dataset.drag !== dragId);
+      let idx = 0;
+      for (const it of items) { const r = it.getBoundingClientRect(); if (e.clientY > r.top + r.height / 2) idx++; }
+      dropIdx = idx;
+      clearIns();
+      if (items.length) { if (idx < items.length) items[idx].classList.add('ins-before'); else items[items.length - 1].classList.add('ins-after'); }
     });
     plan.addEventListener('dragleave', e => {
       const sl = e.target.closest('[data-slot]');
-      if (sl && !sl.contains(e.relatedTarget)) sl.classList.remove('dropok');
+      if (sl && !sl.contains(e.relatedTarget)) { sl.classList.remove('dropok'); clearIns(); }
     });
     plan.addEventListener('drop', e => {
       const sl = e.target.closest('[data-slot]'); if (!sl || !dragId) return;
       e.preventDefault();
       const m = findMenu(dragId); const copy = e.altKey || e.ctrlKey || e.metaKey;
-      dragId = null; document.body.classList.remove('dragging');
+      dragId = null; document.body.classList.remove('dragging'); clearIns();
       if (!m) return;
       const [date, meal] = sl.dataset.slot.split('|');
-      moveMenu(m, date, meal, copy);
+      placeMenu(m, date, meal, dropIdx, copy);
     });
     $('#prevW').onclick = () => { U.weekStart = D.addDays(U.weekStart, -7); renderPlan(); };
     $('#nextW').onclick = () => { U.weekStart = D.addDays(U.weekStart, 7); renderPlan(); };
