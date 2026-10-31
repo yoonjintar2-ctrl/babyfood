@@ -69,8 +69,9 @@ code{background:#f0f1f4;border-radius:4px;padding:1px 5px;font-size:12px}
 .mi:hover{background:#f5f6f8}
 .mi .n{font-size:12.5px;font-weight:500;color:var(--text)}
 .mi.done .n{color:var(--muted);font-weight:400}
-.add-sm{position:relative;align-self:stretch;height:20px;border:none;border-radius:6px;background:transparent;color:#c7cbd2;font-size:13px;line-height:1;opacity:0;margin-top:auto}
+.add-sm{position:relative;align-self:stretch;height:20px;border:none;border-radius:6px;background:transparent;color:#c7cbd2;font-size:13px;line-height:1;opacity:.6;margin-top:auto}
 .c:hover .add-sm,.add-sm:focus{opacity:1}
+.c.multi .mi+.mi{border-top:1px dashed var(--line2);border-radius:0 0 8px 8px}
 @media (hover:none){.add-sm{opacity:1}}
 .add-sm:hover{background:#f0f1f4;color:var(--sub)}
 

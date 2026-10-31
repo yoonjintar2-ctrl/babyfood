@@ -96,6 +96,7 @@
     const t = thisMon();
     if (mon === t) return '이번 주';
     if (mon === D.addDays(t, 7)) return '다음 주';
+    if (mon === D.addDays(t, 14)) return '다다음 주';
     if (mon === D.addDays(t, -7)) return '지난주';
     return D.md(mon) + ' 주';
   }
@@ -111,14 +112,14 @@
       for (const d of days) {
         const ms = menusAt(d, meal);
         if (!ms.length) { emptyN++; cells += `<button class="c emp" data-add="${d}|${meal}" aria-label="${D.md(d)} ${meal} 추가">+</button>`; continue; }
-        cells += '<div class="c">' + ms.map(m => {
+        cells += `<div class="c${ms.length > 1 ? ' multi' : ''}">` + ms.map(m => {
           cnt++; const st = (EV.get(m.id) || {}).state;
           if (st === 'done') done++; else if (st === 'ready') ready++; else short++;
           return `<button class="mi${st === 'done' ? ' done' : ''}" data-open="${m.id}"><span class="n">${esc(m.name)}</span>${statusHtml(m)}</button>`;
         }).join('') + `<button class="add-sm" data-add="${d}|${meal}" aria-label="${D.md(d)} ${meal} 요리 하나 더 추가">+ 하나 더</button></div>`;
       }
     }
-    const stats = cnt ? `${cnt}끼 · 완성 ${done} · 준비 완료 ${ready} · 부족 ${short}${emptyN ? ' · 빈 칸 ' + emptyN : ''}` : '아직 등록한 식단이 없어요';
+    const stats = cnt ? `메뉴 ${cnt}개 · 완성 ${done} · 준비 완료 ${ready} · 부족 ${short}${emptyN ? ' · 빈 칸 ' + emptyN : ''}` : '아직 등록한 식단이 없어요';
     const copyBtn = second ? `<button class="btn sm" data-copyweek="${mon}">${esc(weekTitle(D.addDays(mon, -7)))} 식단 복사</button>` : '';
     return `<section class="wk">
       <div class="st"><h2>${weekTitle(mon)}</h2><span>${D.md(mon)} – ${D.md(D.addDays(mon, 6))}</span><span class="stats">${stats}</span>${copyBtn}</div>
@@ -153,7 +154,7 @@
   const legendHtml = () => '<div class="legend"><span class="s-short">부족</span><span class="s-ready"><i></i>재료 준비 완료</span><span class="s-done">✓ 완성</span></div>';
 
   function renderPlan() {
-    $('#plan').innerHTML = `<div class="desk">${sectionHtml(U.weekStart, false)}${sectionHtml(D.addDays(U.weekStart, 7), true)}</div>${mobileHtml()}`;
+    $('#plan').innerHTML = `<div class="desk">${[0, 7, 14].map(n => sectionHtml(D.addDays(U.weekStart, n), n > 0)).join('')}</div>${mobileHtml()}`;
   }
 
   function renderSide() {
@@ -472,7 +473,7 @@
         <div class="lbr"><span class="lb">필요한 재료</span><small>수량은 0.5, 0.3처럼 소수점 가능</small></div>
         <div class="ings">${(ings.length ? ings : [{}, {}]).map(ingRowHtml).join('')}</div>
         <button type="button" class="addrow">+ 재료 한 줄 더</button>
-        <div class="mf"><button type="submit" class="btn pri">저장</button><button type="button" class="btn ghost" data-close>취소</button></div>
+        <div class="mf"><button type="submit" class="btn pri">저장</button>${m ? '' : '<button type="submit" class="btn" data-more="1">저장하고 같은 끼니에 하나 더</button>'}<button type="button" class="btn ghost" data-close>취소</button></div>
       </form>`, 'edit');
 
     const dateBtn = $('.datebtn', md);
@@ -554,6 +555,7 @@
       else S.menus.push({ id: D.uid(), name, date: st.date, meal: st.meal, ings: out, done: false, createdAt: D.now(), updatedAt: D.now() });
       closeModal(); commit();
       toast(m ? '수정했어요' : `${D.md(st.date)} ${st.meal}에 추가했어요`);
+      if (!m && e.submitter && e.submitter.dataset.more) openEdit({ date: st.date, meal: st.meal });
     });
   }
 
