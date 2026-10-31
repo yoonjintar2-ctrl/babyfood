@@ -111,19 +111,45 @@
       cells += `<div class="rh">${meal}</div>`;
       for (const d of days) {
         const ms = menusAt(d, meal);
-        if (!ms.length) { emptyN++; cells += `<button class="c emp" data-add="${d}|${meal}" aria-label="${D.md(d)} ${meal} 추가">+</button>`; continue; }
-        cells += `<div class="c${ms.length > 1 ? ' multi' : ''}">` + ms.map(m => {
+        if (!ms.length) { emptyN++; cells += `<button class="c emp" data-slot="${d}|${meal}" data-add="${d}|${meal}" aria-label="${D.md(d)} ${meal} 추가">+</button>`; continue; }
+        cells += `<div class="c${ms.length > 1 ? ' multi' : ''}" data-slot="${d}|${meal}">` + ms.map(m => {
           cnt++; const st = (EV.get(m.id) || {}).state;
           if (st === 'done') done++; else if (st === 'ready') ready++; else short++;
           return `<button class="mi${st === 'done' ? ' done' : ''}" data-open="${m.id}"><span class="n">${esc(m.name)}</span>${statusHtml(m)}</button>`;
         }).join('') + `<button class="add-sm" data-add="${d}|${meal}" aria-label="${D.md(d)} ${meal} 요리 하나 더 추가">+ 하나 더</button></div>`;
       }
     }
+    cells += `<div class="rh nh">영양<small>하루</small></div>` + days.map(d => nutCell(d)).join('');
     const stats = cnt ? `메뉴 ${cnt}개 · 완성 ${done} · 준비 완료 ${ready} · 부족 ${short}${emptyN ? ' · 빈 칸 ' + emptyN : ''}` : '아직 등록한 식단이 없어요';
     const copyBtn = second ? `<button class="btn sm" data-copyweek="${mon}">${esc(weekTitle(D.addDays(mon, -7)))} 식단 복사</button>` : '';
     return `<section class="wk">
       <div class="st"><h2>${weekTitle(mon)}</h2><span>${D.md(mon)} – ${D.md(D.addDays(mon, 6))}</span><span class="stats">${stats}</span>${copyBtn}</div>
-      <div class="tb"><div class="gr">${cells}</div></div></section>`;
+      <div class="tb"><div class="gr">${cells}</div></div>
+      <div class="nutref">영양은 등록한 재료로 계산한 대략값이에요(몇 끼 분량이면 나눠서 계산). %는 6~11개월 하루 권장량(단백질 15g · 철분 6mg) 대비예요.</div></section>`;
+  }
+
+  // 일자별 영양 요약 (대략값)
+  function nutOfDay(d) { return window.Nutri.day(D.alive(S.menus).filter(m => m.date === d)); }
+  function nutCell(d) {
+    const n = nutOfDay(d), R = window.Nutri.REF;
+    if (!n.counted) return `<div class="c nut empty">${n.missing.length ? '영양정보 없는 재료뿐' : '–'}</div>`;
+    const pct = (v, r) => Math.round(v / r * 100);
+    const tip = `탄수화물 ${Math.round(n.carb)}g · 지방 ${Math.round(n.fat)}g` + (n.missing.length ? ` · 계산 제외: ${n.missing.join(', ')}` : '');
+    return `<div class="c nut" title="${esc(tip)}">
+      <b>${Math.round(n.kcal)}<small>kcal</small></b>
+      <span>단백질 ${n.protein.toFixed(1)}g <em>${pct(n.protein, R.protein)}%</em></span>
+      <span>철분 ${n.iron.toFixed(1)}mg <em>${pct(n.iron, R.iron)}%</em></span>
+      ${n.missing.length ? `<span class="miss">제외 ${n.missing.length}개</span>` : ''}</div>`;
+  }
+  function nutCard(d) {
+    const n = nutOfDay(d), R = window.Nutri.REF;
+    if (!n.counted) return '';
+    const pct = (v, r) => Math.round(v / r * 100);
+    return `<div class="ncard"><div class="nt">오늘 영양 요약 <small>대략 · 6~11개월 권장량 대비</small></div>
+      <div class="ng"><div><b>${Math.round(n.kcal)}</b><small>kcal · ${pct(n.kcal, R.kcal)}%</small></div>
+      <div><b>${n.protein.toFixed(1)}g</b><small>단백질 · ${pct(n.protein, R.protein)}%</small></div>
+      <div><b>${n.iron.toFixed(1)}mg</b><small>철분 · ${pct(n.iron, R.iron)}%</small></div></div>
+      <div class="nsub">탄수화물 ${Math.round(n.carb)}g · 지방 ${Math.round(n.fat)}g${n.missing.length ? ` · 계산 제외: ${esc(n.missing.join(', '))}` : ''}</div></div>`;
   }
 
   function mobileHtml() {
@@ -141,15 +167,16 @@
     let body = '';
     for (const meal of D.MEALS) {
       const ms = menusAt(U.selDay, meal);
-      body += `<div class="ml"><span>${meal}</span>${ms.length ? `<button class="tbtn" data-add="${U.selDay}|${meal}">+ 하나 더</button>` : ''}</div>`;
+      body += `<div class="mslot" data-slot="${U.selDay}|${meal}"><div class="ml"><span>${meal}</span>${ms.length ? `<button class="tbtn" data-add="${U.selDay}|${meal}">+ 하나 더</button>` : ''}</div>`;
       body += ms.map(m => `<button class="card${m.done ? ' done' : ''}" data-open="${m.id}"><span class="n">${esc(m.name)}</span>${statusHtml(m)}</button>`).join('');
       if (!ms.length) body += `<button class="card add" data-add="${U.selDay}|${meal}">+ 추가</button>`;
+      body += '</div>';
     }
     return `<div class="mob">
       <div class="mweek"><button class="ib" data-mweek="-7" aria-label="이전 주">‹</button><span>${weekTitle(mon)} · ${D.md(mon)} – ${D.md(D.addDays(mon, 6))}</span><button class="ib" data-mweek="7" aria-label="다음 주">›</button></div>
       <div class="days">${chips}</div>
       <div class="mday"><div class="mdt"><b>${dd.getMonth() + 1}월 ${dd.getDate()}일 ${D.dow(U.selDay)}요일</b><span>${all.length ? '완성 ' + doneN + ' / ' + all.length : ''}</span></div>
-      ${legendHtml()}${body}</div></div>`;
+      ${legendHtml()}${body}${nutCard(U.selDay)}</div></div>`;
   }
   const legendHtml = () => '<div class="legend"><span class="s-short">부족</span><span class="s-ready"><i></i>재료 준비 완료</span><span class="s-done">✓ 완성</span></div>';
 
@@ -286,7 +313,7 @@
 
   function menuCatalog() {
     const m = new Map();
-    for (const mm of D.sortMenus(D.alive(S.menus))) m.set(mm.name, { name: mm.name, ings: mm.ings, hint: (mm.ings || []).length ? '재료 ' + mm.ings.map(g => g.name).slice(0, 4).join(', ') + (mm.ings.length > 4 ? ' 외' : '') : '' });
+    for (const mm of D.sortMenus(D.alive(S.menus))) m.set(mm.name, { name: mm.name, ings: mm.ings, serves: mm.serves, hint: (mm.ings || []).length ? '재료 ' + mm.ings.map(g => g.name).slice(0, 4).join(', ') + (mm.ings.length > 4 ? ' 외' : '') : '' });
     return [...m.values()];
   }
 
@@ -350,7 +377,7 @@
       if (act === 'done') { closeModal(); openComplete(id); }
       else if (act === 'undo') { closeModal(); openUndo(id); }
       else if (act === 'edit') { closeModal(); openEdit({ id }); }
-      else if (act === 'clone') { closeModal(); openClone(id); }
+      else if (act === 'clone') { closeModal(); startPaste(id); }
       else if (act === 'del') {
         closeModal();
         const prev = { ...m };
@@ -472,6 +499,7 @@
         </div>
         <label class="lb" for="mname">메뉴 이름</label>
         <div class="acw"><input id="mname" class="in" placeholder="예: 소고기 브로콜리 진밥" value="${esc(m ? m.name : '')}" ${m ? 'data-ok="1"' : 'autofocus'}></div>
+        <div class="srv"><label for="mserves">이 재료로 몇 번 먹나요?</label><input id="mserves" class="in" inputmode="numeric" value="${m && m.serves ? m.serves : 1}"><span>끼 분량</span><small>냉동해서 나눠 먹으면 그 횟수 · 영양 계산에 써요</small></div>
         <div class="recall" hidden></div>
         <div class="lbr"><span class="lb">필요한 재료</span><small>수량은 0.5, 0.3처럼 소수점 가능</small></div>
         <div class="ings">${(ings.length ? ings : [{}, {}]).map(ingRowHtml).join('')}</div>
@@ -537,13 +565,13 @@
           <div class="chips">${item.ings.map(g => `<span>${esc(g.name)} ${D.fmtQ(num(g.qty) || 0)}${esc(g.unit)}</span>`).join('')}</div>
           <div class="rb"><button type="button" class="btn sm dark" data-recall="yes">${filled ? '지금 재료 대신 불러오기' : '불러오기'}</button><button type="button" class="btn sm ghost" data-recall="no">괜찮아요</button></div>`;
         recall.hidden = false;
-        recall._ings = item.ings;
+        recall._ings = item.ings; recall._serves = item.serves;
       }
     });
     nameInp.addEventListener('input', () => { recall.hidden = true; });
     recall.addEventListener('click', e => {
       const b = e.target.closest('[data-recall]'); if (!b) return;
-      if (b.dataset.recall === 'yes') { ingBox.innerHTML = ''; recall._ings.forEach(g => addRow(g)); toast('재료를 불러왔어요. 양은 필요하면 고쳐 주세요'); }
+      if (b.dataset.recall === 'yes') { ingBox.innerHTML = ''; recall._ings.forEach(g => addRow(g)); if (recall._serves) $('#mserves', md).value = recall._serves; toast('재료를 불러왔어요. 양은 필요하면 고쳐 주세요'); }
       recall.hidden = true;
     });
 
@@ -563,8 +591,9 @@
         if (!(q > 0)) { $('.iqty', row).focus(); toast(`'${n}' 수량을 적어 주세요`); return; }
         out.push({ name: n, qty: q, unit: $('.iunit', row).value });
       }
-      if (m) Object.assign(m, { name, date: st.date, meal: st.meal, ings: out, updatedAt: D.now() });
-      else S.menus.push({ id: D.uid(), name, date: st.date, meal: st.meal, ings: out, done: false, createdAt: D.now(), updatedAt: D.now() });
+      const serves = Math.max(1, Math.round(num($('#mserves', md).value)) || 1);
+      if (m) Object.assign(m, { name, date: st.date, meal: st.meal, ings: out, serves, updatedAt: D.now() });
+      else S.menus.push({ id: D.uid(), name, date: st.date, meal: st.meal, ings: out, serves, done: false, createdAt: D.now(), updatedAt: D.now() });
       closeModal(); commit();
       toast(m ? '수정했어요' : `${D.md(st.date)} ${st.meal}에 추가했어요`);
       if (!m && e.submitter && e.submitter.dataset.more) openEdit({ date: st.date, meal: st.meal });
@@ -659,7 +688,7 @@
       if (e.target.closest('[data-close]')) return closeModal();
       if (!e.target.closest('[data-act=go]')) return;
       const t = D.now();
-      const created = adds.map(m => ({ id: D.uid(), name: m.name, date: D.addDays(m.date, 7), meal: m.meal, ings: (m.ings || []).map(g => ({ ...g })), done: false, createdAt: t, updatedAt: t }));
+      const created = adds.map(m => ({ id: D.uid(), name: m.name, date: D.addDays(m.date, 7), meal: m.meal, ings: (m.ings || []).map(g => ({ ...g })), serves: m.serves || 1, done: false, createdAt: t, updatedAt: t }));
       S.menus.push(...created);
       closeModal(); commit();
       toast(`${created.length}끼 복사했어요`, () => { created.forEach(c => Object.assign(c, { deleted: true, updatedAt: D.now() })); commit(); });
@@ -696,6 +725,37 @@
       toast(`${D.md(st.date)} ${st.meal}에 복제했어요`, () => { Object.assign(c, { deleted: true, updatedAt: D.now() }); commit(); });
     });
   }
+
+  // ---------------- 복제: 칸을 골라 붙여넣기 ----------------
+  function startPaste(id) {
+    const m = findMenu(id); if (!m) return;
+    U.paste = { id, n: 0 };
+    document.body.classList.add('pasting');
+    const bar = $('#pasteBar');
+    bar.innerHTML = `<span><b>${esc(m.name)}</b> 붙여넣을 칸을 누르세요<small class="pc"></small></span><button class="btn sm dark" data-pdone>완료</button>`;
+    bar.hidden = false;
+    $('[data-pdone]', bar).onclick = endPaste;
+  }
+  function endPaste() {
+    if (!U.paste) return;
+    const n = U.paste.n;
+    U.paste = null;
+    document.body.classList.remove('pasting');
+    $('#pasteBar').hidden = true;
+    if (n) toast(`${n}칸에 붙여넣었어요`);
+  }
+  function pasteTo(slot) {
+    const m = findMenu(U.paste.id); if (!m) return endPaste();
+    const [date, meal] = slot.split('|');
+    const t = D.now();
+    const c = { id: D.uid(), name: m.name, date, meal, ings: (m.ings || []).map(g => ({ ...g })), serves: m.serves || 1, done: false, createdAt: t, updatedAt: t };
+    S.menus.push(c);
+    U.paste.n++;
+    commit();
+    const pc = $('#pasteBar .pc'); if (pc) pc.textContent = ` · ${U.paste.n}칸 붙여넣음 · 계속 누르면 더 붙여넣어요`;
+    toast(`${D.md(date)} ${meal}에 붙여넣었어요`, () => { Object.assign(c, { deleted: true, updatedAt: D.now() }); if (U.paste) U.paste.n = Math.max(0, U.paste.n - 1); commit(); });
+  }
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && U.paste && !stack.length) endPaste(); });
 
   // ---------------- 계정 ----------------
   function openAccount() {
@@ -753,6 +813,13 @@
   // ---------------- 이벤트 ----------------
   function wire() {
     $('#plan').addEventListener('click', e => {
+      if (U.paste) {
+        const sl = e.target.closest('[data-slot]');
+        if (sl) { e.preventDefault(); return pasteTo(sl.dataset.slot); }
+        const d0 = e.target.closest('[data-day]'); if (d0) { U.selDay = d0.dataset.day; return renderPlan(); }
+        const w0 = e.target.closest('[data-mweek]'); if (w0) { U.selDay = D.addDays(U.selDay, +w0.dataset.mweek); return renderPlan(); }
+        return;
+      }
       const o = e.target.closest('[data-open]'); if (o) return openDetail(o.dataset.open);
       const a = e.target.closest('[data-add]'); if (a) { const [date, meal] = a.dataset.add.split('|'); return openEdit({ date, meal }); }
       const c = e.target.closest('[data-copyweek]'); if (c) return copyWeek(c.dataset.copyweek);

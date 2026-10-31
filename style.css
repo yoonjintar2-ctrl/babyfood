@@ -282,3 +282,40 @@ body.locked{overflow:hidden}
 #asub{width:100%}
 .anote{font-size:12px;color:var(--muted);text-align:center;margin:14px 0 0}
 .modal.clone{overflow:visible}
+
+/* ---------- 복제 붙여넣기 모드 ---------- */
+.pastebar{position:sticky;top:52px;z-index:25;display:flex;align-items:center;justify-content:space-between;gap:12px;background:var(--blue);color:#fff;padding:10px 24px;font-size:13.5px}
+.pastebar[hidden]{display:none}
+.pastebar b{font-weight:700}
+.pastebar small{opacity:.85;font-size:12.5px}
+.pastebar .btn.dark{background:#fff;color:var(--blue);border-color:#fff}
+body.pasting [data-slot]{cursor:copy;position:relative}
+body.pasting .c[data-slot] *{pointer-events:none}
+body.pasting [data-slot]:hover::after{content:'';position:absolute;inset:0;background:rgba(37,99,235,.18);box-shadow:inset 0 0 0 2px rgba(37,99,235,.55);border-radius:2px;pointer-events:none}
+body.pasting .mslot{border-radius:12px;padding:0 6px;margin:0 -6px}
+body.pasting .mslot *{pointer-events:none}
+body.pasting .mslot:active::after,body.pasting [data-slot]:active::after{content:'';position:absolute;inset:0;background:rgba(37,99,235,.28);border-radius:8px}
+
+/* ---------- 영양 요약 ---------- */
+.rh.nh{flex-direction:column;align-items:flex-start;justify-content:center;gap:2px;background:#fafbfc}
+.rh.nh small{font-weight:400;font-size:10.5px;color:var(--muted)}
+.c.nut{background:#fafbfc;padding:8px 10px;gap:1px;font-size:11px;color:var(--sub);min-height:0}
+.c.nut b{font-size:14px;color:var(--text);font-weight:700}
+.c.nut b small{font-size:10.5px;font-weight:400;color:var(--muted);margin-left:2px}
+.c.nut em{font-style:normal;color:var(--muted)}
+.c.nut .miss{color:var(--muted);font-size:10.5px}
+.c.nut.empty{color:var(--faint);justify-content:center}
+.wk .nutref{font-size:11.5px;color:var(--muted);margin:6px 2px 0}
+.ncard{background:#fff;border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-top:20px}
+.ncard .nt{font-size:12.5px;font-weight:700;color:var(--sub)}
+.ncard .nt small{font-weight:400;color:var(--muted);margin-left:4px}
+.ncard .ng{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:8px}
+.ncard .ng b{display:block;font-size:16px}
+.ncard .ng small{font-size:11px;color:var(--muted)}
+.ncard .nsub{font-size:11.5px;color:var(--muted);margin-top:8px}
+
+/* 몇 끼 분량 */
+.srv{display:flex;align-items:center;flex-wrap:wrap;gap:6px 8px;margin-top:10px;font-size:13px;color:var(--sub)}
+.srv .in{width:56px;height:34px;text-align:center;font-size:14px}
+.srv small{flex-basis:100%;font-size:11px;color:var(--muted)}
+@media (max-width:760px){ .pastebar{top:52px;padding:10px 16px} }
