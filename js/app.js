@@ -221,42 +221,121 @@
     return `<div class="rsec"><div class="lnh"><span>레시피 사진${r ? ` ${r.photos.length}장` : ''}</span><span>같은 이름 요리 모두에 함께 보여요</span></div>
       <div class="rstrip">${thumbs}${UPL && UPL.name === name ? `<div class="rup"><i class="spin"></i><span>${UPL.done}/${UPL.total} 올리는 중</span></div>` : `<button type="button" class="radd" data-radd>${CAM}<span>${r ? '추가' : '사진 등록'}</span></button>`}</div></div>`;
   }
+  // 레시피 사진 전체 화면 보기 — 두 손가락 확대/축소, 두 번 탭 확대, 끌어서 이동, 좌우 넘기기
   function openRecipe(name, start = 0) {
     const r = recipeOf(name);
     if (!r) { const mm = D.alive(S.menus).find(x => rKey(x.name) === rKey(name)); if (mm) openDetail(mm.id); return; }
     let i = Math.min(start, r.photos.length - 1);
-    const md = openModal(`<div class="rv"><div class="mh"><div><div class="sub">레시피</div><h3>${esc(name)}</h3></div><button class="x" data-close aria-label="닫기">×</button></div>
-      <div class="rvimg"><button class="ib rvn" data-step="-1" aria-label="이전 사진">‹</button><a target="_blank" rel="noopener"><img alt="레시피 사진"></a><button class="ib rvn" data-step="1" aria-label="다음 사진">›</button></div>
-      <div class="rvbar"><span class="rvc"></span><span><button class="btn sm" data-radd>사진 추가</button> <button class="btn sm ghost" data-rdel>이 요리에서 빼기</button></span></div>
-      <div class="nhost">${notesHtml(name)}</div></div>`, 'recipe');
-    const nhost = $('.nhost', md);
-    wireNotes(nhost, name, () => { nhost.innerHTML = notesHtml(name); });
-    const paint = () => {
-      const rr = recipeOf(name); if (!rr) return closeModal();
-      i = (i + rr.photos.length) % rr.photos.length;
-      const url = Y.photoUrl(rr.photos[i].path);
-      $('.rvimg img', md).src = url; $('.rvimg a', md).href = url;
-      const others = recipesUsing(rr.photos[i].path).filter(n => rKey(n) !== rKey(name));
-      $('.rvc', md).textContent = `${i + 1} / ${rr.photos.length}` + (others.length ? ` · 같은 사진을 쓰는 요리: ${others.join(', ')}` : '');
-      $$('.rvn', md).forEach(b => { b.style.visibility = rr.photos.length > 1 ? '' : 'hidden'; });
+    const fv = document.createElement('div');
+    fv.className = 'fv'; fv.setAttribute('role', 'dialog'); fv.setAttribute('aria-label', name + ' 레시피 사진');
+    fv.innerHTML = `
+      <div class="fvbar"><button class="fvx" data-fclose aria-label="닫기">‹ 돌아가기</button><b class="fvt">${esc(name)}</b><span class="fvc"></span></div>
+      <div class="fvwrap">
+        <div class="fvstage"><img class="fvimg" alt="레시피 사진" draggable="false"></div>
+        <button class="fvn prev" data-step="-1" aria-label="이전 사진">‹</button><button class="fvn next" data-step="1" aria-label="다음 사진">›</button>
+        <div class="fvzoom"><button data-zoom="-1" aria-label="축소">−</button><button data-zoom="0" aria-label="화면에 맞추기">맞춤</button><button data-zoom="1" aria-label="확대">+</button></div>
+      </div>
+      <div class="fvsheet">
+        <button class="fvh" data-sheet><span class="grab"></span><span class="fvhl">만들 때 참고 <small class="ncnt"></small></span></button>
+        <div class="fvbody">
+          <div class="fvacts"><span class="fvo"></span><span><button class="btn sm" data-radd>사진 추가</button> <button class="btn sm ghost" data-rdel>이 요리에서 빼기</button></span></div>
+          <div class="nhost"></div>
+        </div>
+      </div>`;
+    document.body.appendChild(fv);
+    document.body.classList.add('fv-open');
+    const img = $('.fvimg', fv), stage = $('.fvstage', fv), nhost = $('.nhost', fv);
+    let sc = 1, tx = 0, ty = 0;
+    const apply = (anim) => { img.style.transition = anim ? 'transform .18s ease' : 'none'; img.style.transform = `translate(${tx}px,${ty}px) scale(${sc})`; fv.classList.toggle('zoomed', sc > 1.01); };
+    const clamp = () => {
+      const W = stage.clientWidth, H = stage.clientHeight, iw = img.clientWidth * sc, ih = img.clientHeight * sc;
+      const mx = Math.max(0, (iw - W) / 2), my = Math.max(0, (ih - H) / 2);
+      tx = Math.min(mx, Math.max(-mx, tx)); ty = Math.min(my, Math.max(-my, ty));
     };
-    paint();
-    md.addEventListener('click', e => {
-      if (e.target.closest('[data-close]')) return closeModal();
+    const zoomAt = (ns, cx, cy, anim) => {
+      ns = Math.min(5, Math.max(1, ns));
+      const rc = stage.getBoundingClientRect(), ox = cx - rc.left - rc.width / 2, oy = cy - rc.top - rc.height / 2;
+      tx = ox - (ox - tx) * ns / sc; ty = oy - (oy - ty) * ns / sc; sc = ns;
+      if (sc <= 1.01) { sc = 1; tx = 0; ty = 0; }
+      clamp(); apply(anim);
+    };
+    const reset = () => { sc = 1; tx = 0; ty = 0; apply(true); };
+    const paintNotes = () => { nhost.innerHTML = notesHtml(name); const n = notesOf(name).length; $('.ncnt', fv).textContent = n ? n + '개' : ''; };
+    wireNotes(nhost, name, paintNotes);
+    const paint = () => {
+      const rr = recipeOf(name); if (!rr) return close();
+      i = (i + rr.photos.length) % rr.photos.length;
+      img.src = Y.photoUrl(rr.photos[i].path); reset();
+      $('.fvc', fv).textContent = rr.photos.length > 1 ? `${i + 1} / ${rr.photos.length}` : '';
+      const others = recipesUsing(rr.photos[i].path).filter(n => rKey(n) !== rKey(name));
+      $('.fvo', fv).textContent = others.length ? `같은 사진을 쓰는 요리: ${others.join(', ')}` : '';
+      $$('.fvn', fv).forEach(b => { b.hidden = rr.photos.length < 2; });
+      paintNotes();
+    };
+    const close = () => { fv.remove(); document.body.classList.remove('fv-open'); document.removeEventListener('keydown', onKey, true); };
+    const onKey = e => {
+      if (e.target.matches && e.target.matches('input')) { if (e.key === 'Escape') e.target.blur(); return; }
+      if (e.key === 'Escape') { e.stopPropagation(); close(); }
+      if (e.key === 'ArrowLeft') { i--; paint(); } if (e.key === 'ArrowRight') { i++; paint(); }
+      if (e.key === '+' || e.key === '=') zoomAt(sc * 1.5, innerWidth / 2, innerHeight / 2, true);
+      if (e.key === '-') zoomAt(sc / 1.5, innerWidth / 2, innerHeight / 2, true);
+    };
+    document.addEventListener('keydown', onKey, true);
+    // 손가락 · 마우스 제스처
+    const pts = new Map(); let start0 = null, lastTap = 0, moved = false;
+    stage.addEventListener('pointerdown', e => {
+      stage.setPointerCapture(e.pointerId); pts.set(e.pointerId, { x: e.clientX, y: e.clientY }); moved = false;
+      const ps = [...pts.values()];
+      if (ps.length === 2) { const d = Math.hypot(ps[0].x - ps[1].x, ps[0].y - ps[1].y); start0 = { d, sc, tx, ty, cx: (ps[0].x + ps[1].x) / 2, cy: (ps[0].y + ps[1].y) / 2 }; }
+      else start0 = { x: e.clientX, y: e.clientY, tx, ty };
+    });
+    stage.addEventListener('pointermove', e => {
+      if (!pts.has(e.pointerId)) return;
+      pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      const ps = [...pts.values()];
+      if (ps.length === 2 && start0 && start0.d) {
+        const d = Math.hypot(ps[0].x - ps[1].x, ps[0].y - ps[1].y);
+        sc = start0.sc; tx = start0.tx; ty = start0.ty;
+        zoomAt(start0.sc * d / start0.d, start0.cx, start0.cy, false); moved = true;
+      } else if (ps.length === 1 && start0 && start0.x != null) {
+        const dx = e.clientX - start0.x, dy = e.clientY - start0.y;
+        if (Math.abs(dx) + Math.abs(dy) > 6) moved = true;
+        if (sc > 1) { tx = start0.tx + dx; ty = start0.ty + dy; clamp(); apply(false); }
+        else { img.style.transition = 'none'; img.style.transform = `translate(${dx}px,0)`; }
+      }
+    });
+    const up = e => {
+      if (!pts.has(e.pointerId)) return;
+      const wasOne = pts.size === 1; pts.delete(e.pointerId);
+      if (wasOne && start0 && start0.x != null) {
+        const dx = e.clientX - start0.x;
+        if (sc <= 1 && Math.abs(dx) > 60 && (recipeOf(name) || {}).photos.length > 1) { i += dx < 0 ? 1 : -1; paint(); start0 = null; return; }
+        if (sc <= 1) apply(true);
+        if (!moved) { const now = Date.now(); if (now - lastTap < 300) { zoomAt(sc > 1.01 ? 1 : 2.5, e.clientX, e.clientY, true); lastTap = 0; } else lastTap = now; }
+      }
+      if (pts.size === 1) { const p0 = [...pts.values()][0]; start0 = { x: p0.x, y: p0.y, tx, ty }; } else if (!pts.size) start0 = null;
+    };
+    stage.addEventListener('pointerup', up); stage.addEventListener('pointercancel', up);
+    stage.addEventListener('wheel', e => { e.preventDefault(); zoomAt(sc * (e.deltaY < 0 ? 1.2 : 1 / 1.2), e.clientX, e.clientY, false); }, { passive: false });
+    img.addEventListener('load', () => { clamp(); apply(false); });
+    fv.addEventListener('click', e => {
+      if (e.target.closest('[data-fclose]')) return close();
       const st = e.target.closest('[data-step]'); if (st) { i += +st.dataset.step; return paint(); }
+      const z = e.target.closest('[data-zoom]'); if (z) { const v = +z.dataset.zoom; return v === 0 ? reset() : zoomAt(v > 0 ? sc * 1.6 : sc / 1.6, innerWidth / 2, stage.getBoundingClientRect().top + stage.clientHeight / 2, true); }
+      if (e.target.closest('[data-sheet]')) return fv.classList.toggle('sheet-open');
       if (e.target.closest('[data-radd]')) return pickPhotos(name, () => { if (!UPL) paint(); });
       if (e.target.closest('[data-rdel]')) {
         if (!confirm(`이 사진을 '${name}' 레시피에서 뺄까요? 같은 요리 모든 날짜에서 사라져요.`)) return;
         const k = rKey(name), rr = S.recipes[k], [gone] = rr.photos.splice(i, 1);
         rr.updatedAt = D.now(); commit();
-        if (!recipesUsing(gone.path).length) Y.removePhoto(gone.path); // 다른 요리가 같이 쓰면 파일은 남김
-        toast('사진을 삭제했어요');
-        if (!rr.photos.length) return closeModal();
+        if (!recipesUsing(gone.path).length) Y.removePhoto(gone.path);
+        toast('사진을 뺐어요');
+        if (!rr.photos.length) return close();
         paint();
       }
     });
-    md.addEventListener('keydown', e => { if (e.target.matches('input')) return; if (e.key === 'ArrowLeft') { i--; paint(); } if (e.key === 'ArrowRight') { i++; paint(); } });
-    md.tabIndex = -1; md.focus();
+    if (notesOf(name).length) fv.classList.add('sheet-open');
+    paint();
   }
 
   function shortLine(m) {
@@ -369,7 +448,7 @@
       body += '</div>';
     }
     return `<div class="mob">
-      <div class="mweek"><button class="ib" data-mweek="-7" aria-label="이전 주">‹</button><span>${weekTitle(mon)} · ${D.md(mon)} – ${D.md(D.addDays(mon, 6))}</span><button class="ib" data-mweek="7" aria-label="다음 주">›</button></div>
+      <div class="mweek"><button class="wkbtn" data-mweek="-7" aria-label="이전 주">‹ 이전 주</button><span class="wkt"><b>${weekTitle(mon)}</b><small>${D.md(mon)} – ${D.md(D.addDays(mon, 6))}</small></span><button class="wkbtn" data-mweek="7" aria-label="다음 주">다음 주 ›</button></div>
       <div class="days">${chips}</div>
       <div class="mday"><div class="mdt"><b>${dd.getMonth() + 1}월 ${dd.getDate()}일 ${D.dow(U.selDay)}요일</b><span>${all.length ? '완성 ' + doneN + ' / ' + all.length : ''}</span></div>
       ${legendHtml()}${body}${nutCard(U.selDay)}</div></div>`;
@@ -1445,6 +1524,11 @@
   });
   document.addEventListener('compositionend', e => { const t = e.target; if (t.matches && t.matches('input[inputmode=decimal], input[inputmode=numeric]')) t.value = t.value.replace(/[^0-9.,]/g, ''); });
 
+  // 화면 확대/축소 막기 (iOS 사파리는 viewport 설정을 무시해서 제스처를 직접 막는다)
+  ['gesturestart', 'gesturechange', 'gestureend'].forEach(t => document.addEventListener(t, e => e.preventDefault(), { passive: false }));
+  document.addEventListener('touchmove', e => { if (e.touches.length > 1 && !e.target.closest('.fvstage')) e.preventDefault(); }, { passive: false });
+  // 두 번 탭 확대는 CSS touch-action: manipulation 으로 막는다 (빠른 연속 탭이 씹히지 않게)
+
   // ---------------- 시작 ----------------
   let channel = null;
   // 예시 피드백(당근 스틱) 한 번만 넣기 — 고정 id 라 여러 기기에서 돌아도 하나만 남는다
@@ -1456,6 +1540,7 @@
     const menu = D.alive(S.menus).find(m => M.norm(m.name) === target) || D.alive(S.menus).find(m => M.norm(m.name).includes(target));
     const name = menu ? menu.name : '당근 스틱';
     const k = rKey(name), cur = S.recipes[k] || { name, photos: [] };
+    if (D.alive(cur.notes || []).some(n => /5분\s*더/.test(n.text))) return; // 이미 같은 내용을 적어 뒀으면 넣지 않음
     const t = Date.parse('2026-11-01T13:25:00+09:00');
     S.recipes[k] = { ...cur, name: cur.name || name, notes: [...(cur.notes || []), { id: SEED, text: '너무 딱딱해서 5분 더 쪘음', at: t, updatedAt: t, by: '' }], updatedAt: D.now() };
     commit();
