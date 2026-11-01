@@ -59,7 +59,13 @@
     const al = { ...(a.aliases || {}) };
     for (const [k, v] of Object.entries(b.aliases || {})) if (!al[k] || (v.t || 0) > (al[k].t || 0)) al[k] = v;
     const rc = { ...(a.recipes || {}) };
-    for (const [k, v] of Object.entries(b.recipes || {})) if (!rc[k] || (v.updatedAt || 0) > (rc[k].updatedAt || 0)) rc[k] = v;
+    for (const [k, v] of Object.entries(b.recipes || {})) {
+      const o = rc[k];
+      if (!o) { rc[k] = v; continue; }
+      const win = (v.updatedAt || 0) > (o.updatedAt || 0) ? v : o;
+      // 피드백은 둘 다 합친다 (id 기준, 지운 건 deleted 표시로 남김)
+      rc[k] = { ...win, notes: mergeById(o.notes || [], v.notes || []) };
+    }
     return { v: 1, fridge: mergeById(a.fridge, b.fridge), menus: mergeById(a.menus, b.menus), aliases: al, recipes: rc };
   }
 

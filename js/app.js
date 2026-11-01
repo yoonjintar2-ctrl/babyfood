@@ -81,9 +81,52 @@
   const CAM = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 7h3l2-3h6l2 3h3a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1z"/><circle cx="12" cy="13" r="3.5"/></svg>';
   const rKey = name => M.norm(name);
   const recipeOf = name => { const r = (S.recipes || {})[rKey(name)]; return r && r.photos && r.photos.length ? r : null; };
+  const notesOf = name => { const r = (S.recipes || {})[rKey(name)]; return r ? D.alive(r.notes || []).sort((a, b) => (a.at || 0) - (b.at || 0)) : []; };
+  const NOTE = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13 7l4 4"/></svg>';
   function rcpIcon(m) {
-    const r = recipeOf(m.name); if (!r) return '';
-    return `<span class="rcp" data-recipe="${esc(m.name)}" role="button" tabindex="0" title="레시피 사진 ${r.photos.length}장 보기">${CAM}${r.photos.length > 1 ? `<small>${r.photos.length}</small>` : ''}</span>`;
+    const r = recipeOf(m.name), nn = notesOf(m.name).length;
+    if (!r && !nn) return '';
+    const tip = [r ? `레시피 사진 ${r.photos.length}장` : '', nn ? `피드백 ${nn}개` : ''].filter(Boolean).join(' · ');
+    return `<span class="rcp" data-recipe="${esc(m.name)}" role="button" tabindex="0" title="${tip} 보기">${r ? CAM : NOTE}${r && r.photos.length > 1 ? `<small>${r.photos.length}</small>` : ''}${nn ? `<i class="ndot"></i>` : ''}</span>`;
+  }
+  // 요리 피드백 (같은 이름 요리 모든 회차에 표시)
+  function notesHtml(name) {
+    const ns = notesOf(name);
+    return `<div class="nsec"><div class="lnh"><span>만들 때 참고${ns.length ? ` ${ns.length}` : ''}</span><span>다음 회차부터 계속 보여요</span></div>
+      ${ns.map(n => `<div class="note-it" data-nid="${n.id}"><span class="nt-tx">${esc(n.text)}</span><span class="nt-meta">${n.by ? esc(n.by) + ' · ' : ''}${D.md(D.iso(new Date(n.at)))}<button type="button" class="tbtn" data-nedit>수정</button><button type="button" class="tbtn" data-ndel>삭제</button></span></div>`).join('')}
+      <form class="nadd"><input class="in" placeholder="예: 레시피대로 했는데 당근이 딱딱해서 30초 더 데웠음" aria-label="피드백"><button class="btn sm">추가</button></form></div>`;
+  }
+  function addNote(name, text) {
+    S.recipes = S.recipes || {};
+    const k = rKey(name), cur = S.recipes[k] || { name, photos: [] };
+    const n = { id: D.uid(), text, at: D.now(), updatedAt: D.now(), by: ME ? Y.userId(ME) : '' };
+    S.recipes[k] = { ...cur, name: cur.name || name, notes: [...(cur.notes || []), n], updatedAt: D.now() };
+    commit();
+  }
+  function wireNotes(host, name, repaint) {
+    host.addEventListener('submit', e => {
+      if (!e.target.matches('.nadd')) return;
+      e.preventDefault();
+      const inp = $('input', e.target), t = inp.value.trim(); if (!t) return inp.focus();
+      addNote(name, t); repaint(); toast('피드백을 남겼어요 · 이 요리 모든 날짜에 보여요');
+      setTimeout(() => { const i2 = $('.nadd input', host); if (i2) i2.focus(); }, 0);
+    });
+    host.addEventListener('click', e => {
+      const it = e.target.closest('[data-nid]'); if (!it) return;
+      const r = S.recipes[rKey(name)], n = (r.notes || []).find(x => x.id === it.dataset.nid); if (!n) return;
+      if (e.target.closest('[data-ndel]')) {
+        Object.assign(n, { deleted: true, updatedAt: D.now() }); r.updatedAt = D.now(); commit(); repaint();
+        toast('피드백을 지웠어요', () => { Object.assign(n, { deleted: false, updatedAt: D.now() }); r.updatedAt = D.now(); commit(); repaint(); });
+      }
+      if (e.target.closest('[data-nedit]')) {
+        const tx = $('.nt-tx', it);
+        tx.outerHTML = `<input class="in nt-in" value="${esc(n.text)}" aria-label="피드백 수정">`;
+        const inp = $('.nt-in', it); inp.focus(); inp.select();
+        const done = () => { const v = inp.value.trim(); if (v && v !== n.text) { Object.assign(n, { text: v, updatedAt: D.now() }); r.updatedAt = D.now(); commit(); } repaint(); };
+        inp.addEventListener('keydown', ev => { if (ev.key === 'Enter') { ev.preventDefault(); inp.blur(); } if (ev.key === 'Escape') { inp.value = n.text; inp.blur(); } });
+        inp.addEventListener('blur', done, { once: true });
+      }
+    });
   }
   // 사진 열기: createImageBitmap 이 안 되는 브라우저(구형 사파리 등)는 <img> 로
   async function decodeImage(file) {
@@ -179,11 +222,15 @@
       <div class="rstrip">${thumbs}${UPL && UPL.name === name ? `<div class="rup"><i class="spin"></i><span>${UPL.done}/${UPL.total} 올리는 중</span></div>` : `<button type="button" class="radd" data-radd>${CAM}<span>${r ? '추가' : '사진 등록'}</span></button>`}</div></div>`;
   }
   function openRecipe(name, start = 0) {
-    const r = recipeOf(name); if (!r) return;
+    const r = recipeOf(name);
+    if (!r) { const mm = D.alive(S.menus).find(x => rKey(x.name) === rKey(name)); if (mm) openDetail(mm.id); return; }
     let i = Math.min(start, r.photos.length - 1);
     const md = openModal(`<div class="rv"><div class="mh"><div><div class="sub">레시피</div><h3>${esc(name)}</h3></div><button class="x" data-close aria-label="닫기">×</button></div>
       <div class="rvimg"><button class="ib rvn" data-step="-1" aria-label="이전 사진">‹</button><a target="_blank" rel="noopener"><img alt="레시피 사진"></a><button class="ib rvn" data-step="1" aria-label="다음 사진">›</button></div>
-      <div class="rvbar"><span class="rvc"></span><span><button class="btn sm" data-radd>사진 추가</button> <button class="btn sm ghost" data-rdel>이 요리에서 빼기</button></span></div></div>`, 'recipe');
+      <div class="rvbar"><span class="rvc"></span><span><button class="btn sm" data-radd>사진 추가</button> <button class="btn sm ghost" data-rdel>이 요리에서 빼기</button></span></div>
+      <div class="nhost">${notesHtml(name)}</div></div>`, 'recipe');
+    const nhost = $('.nhost', md);
+    wireNotes(nhost, name, () => { nhost.innerHTML = notesHtml(name); });
     const paint = () => {
       const rr = recipeOf(name); if (!rr) return closeModal();
       i = (i + rr.photos.length) % rr.photos.length;
@@ -208,7 +255,7 @@
         paint();
       }
     });
-    md.addEventListener('keydown', e => { if (e.key === 'ArrowLeft') { i--; paint(); } if (e.key === 'ArrowRight') { i++; paint(); } });
+    md.addEventListener('keydown', e => { if (e.target.matches('input')) return; if (e.key === 'ArrowLeft') { i--; paint(); } if (e.key === 'ArrowRight') { i++; paint(); } });
     md.tabIndex = -1; md.focus();
   }
 
@@ -631,6 +678,7 @@
       ${r.lines.length ? `<div class="lnh"><span>재료 ${r.lines.length}개</span><span>필요 / 냉장고</span></div>${lines}` : '<div class="emptytxt">등록된 재료가 없어요.</div>'}
       ${r.state === 'short' && r.lines.some(l => l.short > 1e-9 && l.have) ? '<div class="note">냉장고에 있어도 앞선 날짜 메뉴에 먼저 배정된 양은 부족으로 계산돼요.</div>' : ''}
       <div class="rhost">${recipeStrip(m.name)}</div>
+      <div class="nhost">${notesHtml(m.name)}</div>
       <div class="mf">
         ${m.done ? `<button class="btn" data-act="undo">완성 취소</button>` : `<button class="btn pri" data-act="done">완성으로 표시</button>`}
         <button class="btn" data-act="clone">복제하기</button>
@@ -640,6 +688,7 @@
         <button class="btn ghost" data-act="del">삭제</button>
       </div>`, 'detail');
     const repaintR = () => { const h = $('.rhost', md); if (h) h.innerHTML = recipeStrip(m.name); };
+    const nh = $('.nhost', md); wireNotes(nh, m.name, () => { nh.innerHTML = notesHtml(m.name); });
     md.addEventListener('click', e => {
       if (e.target.closest('[data-radd]')) return pickPhotos(m.name, repaintR);
       const rv = e.target.closest('[data-rview]'); if (rv) return openRecipe(m.name, +rv.dataset.rview);
@@ -1354,6 +1403,19 @@
 
   // ---------------- 시작 ----------------
   let channel = null;
+  // 예시 피드백(당근 스틱) 한 번만 넣기 — 고정 id 라 여러 기기에서 돌아도 하나만 남는다
+  function seedNotes() {
+    const SEED = 'seed-carrot-stick-1';
+    S.recipes = S.recipes || {};
+    if (Object.values(S.recipes).some(r => (r.notes || []).some(n => n.id === SEED))) return;
+    const target = '당근스틱';
+    const menu = D.alive(S.menus).find(m => M.norm(m.name) === target) || D.alive(S.menus).find(m => M.norm(m.name).includes(target));
+    const name = menu ? menu.name : '당근 스틱';
+    const k = rKey(name), cur = S.recipes[k] || { name, photos: [] };
+    const t = Date.parse('2026-11-01T13:25:00+09:00');
+    S.recipes[k] = { ...cur, name: cur.name || name, notes: [...(cur.notes || []), { id: SEED, text: '너무 딱딱해서 5분 더 쪘음', at: t, updatedAt: t, by: '' }], updatedAt: D.now() };
+    commit();
+  }
   async function onUser(u) {
     const was = ME && ME.id;
     ME = u;
@@ -1361,7 +1423,7 @@
     if (u) {
       av.textContent = Y.userId(u).slice(0, 1).toUpperCase(); av.title = Y.userId(u) + ' · 계정';
       showAuth(false);
-      if (was !== u.id) { await doPull(); if (!channel) channel = Y.subscribe(() => doPull()); }
+      if (was !== u.id) { await doPull(); seedNotes(); if (!channel) channel = Y.subscribe(() => doPull()); }
     } else {
       av.textContent = ''; av.title = '로그인';
       if (channel) { Y.sb.removeChannel(channel); channel = null; }
