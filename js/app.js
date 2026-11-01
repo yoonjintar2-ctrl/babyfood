@@ -722,48 +722,77 @@
 
   function openComplete(id) {
     const m = findMenu(id); if (!m) return;
-    const rows = (m.ings || []).filter(g => g.name).map((g, i) => {
-      const [need, bu] = D.toBase(num(g.qty) || 0, g.unit);
-      const fs = fridgeMatch(g.name, bu).filter(f => f.qty > 0);
-      const have = fs.reduce((s, f) => s + D.toBase(f.qty, f.unit)[0], 0);
-      const after = Math.max(0, have - need);
-      const can = have > 0;
-      return `<label class="cr${can ? '' : ' off'}"><input type="checkbox" data-i="${i}" ${can ? 'checked' : 'disabled'}><span>${esc(g.name)} <small>${D.fmtQ(num(g.qty) || 0)}${esc(g.unit)}</small></span><span class="q">${can ? `${D.fmtAmt(have, bu)} → <b>${D.fmtAmt(after, bu)}</b>` : '냉장고에 없음'}</span></label>`;
-    }).join('');
+    // 앞으로 예정된 같은 요리 (한 번에 여러 개 만들 때 같이 완성)
+    const later = D.sortMenus(D.alive(S.menus).filter(x => x.id !== m.id && !x.done && M.norm(x.name) === M.norm(m.name) && x.date >= m.date));
     const md = openModal(`
       <div class="mh"><div><div class="sub">${D.md(m.date)} (${D.dow(m.date)}) ${esc(m.meal)}</div><h3>${esc(m.name)} 완성할까요?</h3></div><button class="x" data-close aria-label="닫기">×</button></div>
-      <p class="desc">이 음식을 만들 때 쓴 재료를 냉장고에서 차감할까요? 차감하지 않을 재료는 체크를 빼 주세요.</p>
-      ${rows ? `<div class="lnh"><span>재료</span><span>냉장고 → 차감 후</span></div>${rows}` : ''}
+      ${later.length ? `<div class="batch">
+        <div class="bt"><b>앞으로 예정된 '${esc(m.name)}' ${later.length}끼도 같이 완성할까요?</b><small>한 번에 여러 개 만들었다면 체크해 두세요</small></div>
+        <label class="ball"><input type="checkbox" data-ball checked> 모두 선택</label>
+        <div class="blist">${later.map(x => `<label class="bit"><input type="checkbox" data-later="${x.id}" checked><span>${D.md(x.date)} (${D.dow(x.date)}) ${esc(x.meal)}</span></label>`).join('')}</div>
+      </div>` : ''}
+      <p class="desc">만들 때 쓴 재료를 냉장고에서 차감할까요? 차감하지 않을 재료는 체크를 빼 주세요.</p>
+      <div class="crows"></div>
       <div class="mf col">
         <button class="btn pri big" data-act="deduct"></button>
         <button class="btn" data-act="plain">차감 없이 완성만 표시</button>
         <button class="btn ghost" data-close>취소</button>
       </div>`, 'complete');
-    const paintBtn = () => { const n = $$('input[type=checkbox]:checked', md).length; const b = $('[data-act=deduct]', md); b.textContent = n ? `${n}개 차감하고 완성` : '완성'; };
-    paintBtn();
-    md.addEventListener('change', paintBtn);
+    const off = new Set(); // 차감 안 할 재료 키
+    const chosen = () => [m, ...later.filter(x => { const c = $(`[data-later="${x.id}"]`, md); return c && c.checked; })];
+    // 고른 메뉴들의 재료를 재료·단위별로 합친다
+    const totals = () => {
+      const t = new Map();
+      for (const mm of chosen()) for (const g of mm.ings || []) {
+        if (!g.name) continue;
+        const [q, bu] = D.toBase(num(g.qty) || 0, g.unit);
+        const k = M.canon(g.name) + '|' + bu;
+        const it = t.get(k) || { k, name: g.name, bu, need: 0 }; it.need += q; t.set(k, it);
+      }
+      return [...t.values()];
+    };
+    const paint = () => {
+      const list = totals(), n = chosen().length;
+      $('.crows', md).innerHTML = list.length ? `<div class="lnh"><span>재료${n > 1 ? ` (${n}끼 분량 합계)` : ''}</span><span>냉장고 → 차감 후</span></div>` + list.map(it => {
+        const have = fridgeMatch(it.name, it.bu).filter(f => f.qty > 0).reduce((s2, f) => s2 + D.toBase(f.qty, f.unit)[0], 0);
+        const can = have > 0;
+        return `<label class="cr${can ? '' : ' off'}"><input type="checkbox" data-k="${esc(it.k)}" ${can && !off.has(it.k) ? 'checked' : ''} ${can ? '' : 'disabled'}><span>${esc(it.name)} <small>${D.fmtAmt(it.need, it.bu)}</small></span><span class="q">${can ? `${D.fmtAmt(have, it.bu)} → <b>${D.fmtAmt(Math.max(0, have - it.need), it.bu)}</b>${have + 1e-9 < it.need ? ' <small>(부족)</small>' : ''}` : '냉장고에 없음'}</span></label>`;
+      }).join('') : '';
+      const k = $$('.crows input:checked', md).length;
+      $('[data-act=deduct]', md).textContent = (k ? `재료 ${k}개 차감하고 ` : '') + (n > 1 ? `${n}끼 완성` : '완성');
+      $('[data-act=plain]', md).textContent = `차감 없이 완성만 표시${n > 1 ? ` (${n}끼)` : ''}`;
+      const all = $('[data-ball]', md); if (all) { const cs = $$('[data-later]', md); all.checked = cs.every(c => c.checked); all.indeterminate = !all.checked && cs.some(c => c.checked); }
+    };
+    paint();
+    md.addEventListener('change', e => {
+      if (e.target.matches('[data-ball]')) $$('[data-later]', md).forEach(c => { c.checked = e.target.checked; });
+      if (e.target.matches('[data-k]')) { if (e.target.checked) off.delete(e.target.dataset.k); else off.add(e.target.dataset.k); }
+      paint();
+    });
     md.addEventListener('click', e => {
       const a = e.target.closest('[data-act],[data-close]'); if (!a) return;
       if (a.hasAttribute('data-close')) return closeModal();
-      const deducted = [];
+      const group = chosen(), deducted = [];
       if (a.dataset.act === 'deduct') {
-        for (const cb of $$('input[type=checkbox]:checked', md)) {
-          const g = m.ings[+cb.dataset.i];
-          let [need, bu] = D.toBase(num(g.qty) || 0, g.unit);
-          for (const f of fridgeMatch(g.name, bu)) {
+        for (const it of totals()) {
+          if (off.has(it.k)) continue;
+          let need = it.need;
+          for (const f of fridgeMatch(it.name, it.bu)) {
             if (need <= 1e-9) break;
-            const [fq] = D.toBase(f.qty, f.unit), factor = fq / (f.qty || 1);
-            const take = Math.min(fq, need);
+            const [fq] = D.toBase(f.qty, f.unit); if (!(fq > 0)) continue;
+            const factor = fq / (f.qty || 1), take = Math.min(fq, need);
             f.qty = Math.max(0, Math.round((f.qty - take / (factor || 1)) * 1000) / 1000);
             f.updatedAt = D.now();
             need -= take;
-            deducted.push({ name: f.name, qty: take, unit: bu });
+            deducted.push({ name: f.name, qty: take, unit: it.bu });
           }
         }
       }
-      Object.assign(m, { done: true, doneAt: D.now(), deducted, updatedAt: D.now() });
+      const t = D.now(), batch = group.length > 1 ? D.uid() : null;
+      group.forEach((x, i) => Object.assign(x, { done: true, doneAt: t, deducted: i === 0 ? deducted : [], batch, updatedAt: t }));
       closeModal(); commit();
-      toast(deducted.length ? `완성 · 재료 ${deducted.length}개 차감했어요` : '완성으로 표시했어요');
+      const what = group.length > 1 ? `${group.length}끼 완성` : '완성';
+      toast(deducted.length ? `${what} · 재료 ${deducted.length}개 차감했어요` : `${what}으로 표시했어요`);
     });
   }
 
@@ -783,23 +812,38 @@
 
   function openUndo(id) {
     const m = findMenu(id); if (!m) return;
-    const ded = m.deducted || [];
+    const mates = m.batch ? D.sortMenus(D.alive(S.menus).filter(x => x.id !== m.id && x.done && x.batch === m.batch)) : [];
+    const dedOf = list => list.flatMap(x => x.deducted || []);
     const md = openModal(`
       <div class="mh"><h3>완성을 취소할까요?</h3><button class="x" data-close aria-label="닫기">×</button></div>
-      ${ded.length ? `<p class="desc">완성할 때 차감했던 재료를 냉장고에 되돌릴까요?</p><div class="chips">${ded.map(d => `<span>${esc(d.name)} ${D.fmtAmt(d.qty, d.unit)}</span>`).join('')}</div>` : ''}
+      ${mates.length ? `<label class="ball"><input type="checkbox" data-mates checked> 같이 완성했던 ${mates.length}끼도 취소 <small>(${mates.map(x => `${D.md(x.date)} ${esc(x.meal)}`).join(', ')})</small></label>` : ''}
+      <div class="dedbox"></div>
       <div class="mf col">
-        ${ded.length ? '<button class="btn pri" data-act="restore">재료 되돌리고 취소</button>' : ''}
-        <button class="btn${ded.length ? '' : ' pri'}" data-act="only">완성만 취소</button>
+        <button class="btn pri" data-act="restore">재료 되돌리고 취소</button>
+        <button class="btn" data-act="only">완성만 취소</button>
         <button class="btn ghost" data-close>닫기</button>
       </div>`, 'small');
+    const group = () => { const c = $('[data-mates]', md); return c && c.checked ? [m, ...mates] : [m]; };
+    const paint = () => {
+      const ded = dedOf(group());
+      $('.dedbox', md).innerHTML = ded.length ? `<p class="desc">완성할 때 차감했던 재료를 냉장고에 되돌릴까요?</p><div class="chips">${ded.map(d => `<span>${esc(d.name)} ${D.fmtAmt(d.qty, d.unit)}</span>`).join('')}</div>` : '';
+      $('[data-act=restore]', md).hidden = !ded.length;
+      $('[data-act=only]', md).classList.toggle('pri', !ded.length);
+    };
+    paint();
+    md.addEventListener('change', paint);
     md.addEventListener('click', e => {
       const a = e.target.closest('[data-act],[data-close]'); if (!a) return;
       if (a.hasAttribute('data-close')) return closeModal();
-      if (a.dataset.act === 'restore') for (const d of ded) addToFridge(d.name, d.qty, d.unit);
-      Object.assign(m, { done: false, doneAt: null, deducted: null, updatedAt: D.now() });
-      closeModal(); commit(); toast('완성을 취소했어요');
+      const g = group(), t = D.now();
+      if (a.dataset.act === 'restore') for (const d of dedOf(g)) addToFridge(d.name, d.qty, d.unit);
+      // 묶음 일부만 취소하면 남은 쪽에 차감 기록을 넘겨 준다
+      if (g.length === 1 && mates.length && (m.deducted || []).length && a.dataset.act !== 'restore') mates[0].deducted = [...(mates[0].deducted || []), ...m.deducted];
+      g.forEach(x => Object.assign(x, { done: false, doneAt: null, deducted: null, batch: null, updatedAt: t }));
+      closeModal(); commit(); toast(g.length > 1 ? `${g.length}끼 완성을 취소했어요` : '완성을 취소했어요');
     });
   }
+
 
   // ---------------- 식단 추가 · 수정 ----------------
   function ingRowHtml(g = {}) {

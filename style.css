@@ -514,3 +514,13 @@ body.side-open .sidebg{display:block}
 .rcp .ndot{position:absolute;top:0;right:-1px;width:5px;height:5px;border-radius:50%;background:#f59e0b}
 .modal.recipe .rvimg img{max-height:58vh}
 .modal.recipe .nsec{max-width:none}
+
+/* 같이 완성 */
+.batch{margin-top:12px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:10px 12px}
+.batch .bt{display:flex;flex-direction:column;gap:2px;font-size:13.5px}
+.batch .bt small{font-size:11.5px;color:var(--muted)}
+.ball{display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--sub);margin-top:8px;cursor:pointer}
+.ball small{color:var(--muted)}
+.ball input,.bit input{margin:0;accent-color:#15803d;width:16px;height:16px}
+.blist{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.bit{display:inline-flex;align-items:center;gap:5px;background:#fff;border:1px solid #d1fae5;border-radius:999px;padding:4px 10px;font-size:12.5px;cursor:pointer}
